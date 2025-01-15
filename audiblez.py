@@ -118,10 +118,17 @@ def find_chapters(book, verbose=False):
 
 def pick_chapters(book):
     all_chapters_names = [c.get_name() for c in book.get_items()]
-    title = 'Select which chapters to read in the audiobook'
+    title = 'Select which chapters to read in the audiobook (in the desired order to be added to the audiobook)'
     selected_chapters_names = pick(all_chapters_names, title, multiselect=True, min_selection_count=1)
     selected_chapters_names = [c[0] for c in selected_chapters_names]
-    selected_chapters = [c for c in book.get_items() if c.get_name() in selected_chapters_names]
+    selected_chapters = []
+    for chapter_name in selected_chapters_names:
+        matching_chapters = [c for c in book.get_items()
+                             if c.get_name() == chapter_name]
+        if len(matching_chapters) != 1:
+            print(f'Error: could not find chapter {chapter_name}')
+            sys.exit(1)
+        selected_chapters.append(matching_chapters[0])
     return selected_chapters
 
 

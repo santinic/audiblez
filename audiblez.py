@@ -138,11 +138,11 @@ def strfdelta(tdelta, fmt='{D:02}d {H:02}h {M:02}m {S:02}s'):
     return f.format(fmt, **values)
 
 
-def create_m4b(chaptfer_files, filename):
+def create_m4b(chapter_files, filename):
     tmp_filename = filename.replace('.epub', '.tmp.m4a')
     if not Path(tmp_filename).exists():
         combined_audio = AudioSegment.empty()
-        for wav_file in chaptfer_files:
+        for wav_file in chapter_files:
             audio = AudioSegment.from_wav(wav_file)
             combined_audio += audio
         print('Converting to Mp4...')

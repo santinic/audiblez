@@ -3,7 +3,8 @@ __pycache__
 *.wav
 *.mp3
 gene
-epub
+*.epub
+*.m4b
 *.sh
 *.json
 *.onnx

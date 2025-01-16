@@ -41,6 +41,13 @@ Use `-l` option to specify the language, available language codes are:
 🇺🇸 `en-us`, 🇬🇧 `en-gb`, 🇫🇷 `fr-fr`, 🇯🇵 `ja`, 🇰🇷 `kr` and 🇨🇳 `cmn`.
 
 
+## Speed
+By default the audio is generated using a normal speed, but you can make it up to twice slower or faster by specifying a speed argument between 0.5 to 2.0:
+
+```bash
+audiblez book.epub -l en-gb -v af_sky -s 1.5
+```
+
 ## Supported Voices
 Use `-v` option to specify the voice:
 available voices are `af`, `af_bella`, `af_nicole`, `af_sarah`, `af_sky`, `am_adam`, `am_michael`, `bf_emma`, `bf_isabella`, `bm_george`, `bm_lewis`.

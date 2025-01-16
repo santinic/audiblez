@@ -21,7 +21,7 @@ from pydub import AudioSegment
 from pick import pick
 
 
-def main(kokoro, file_path, lang, voice, pick_manually):
+def main(kokoro, file_path, lang, voice, pick_manually, speed):
     filename = Path(file_path).name
     with warnings.catch_warnings():
         book = epub.read_epub(file_path)
@@ -55,11 +55,15 @@ def main(kokoro, file_path, lang, voice, pick_manually):
             print(f'File for chapter {i} already exists. Skipping')
             i += 1
             continue
+        if len(text.strip()) < 10:
+            print(f'Skipping empty chapter {i}')
+            i += 1
+            continue
         print(f'Reading chapter {i} ({len(text):,} characters)...')
         if i == 1:
             text = intro + '.\n\n' + text
         start_time = time.time()
-        samples, sample_rate = kokoro.create(text, voice=voice, speed=1.0, lang=lang)
+        samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang=lang)
         sf.write(f'{chapter_filename}', samples, sample_rate)
         end_time = time.time()
         delta_seconds = end_time - start_time
@@ -73,7 +77,7 @@ def main(kokoro, file_path, lang, voice, pick_manually):
         print('Progress:', f'{progress}%')
         i += 1
     if has_ffmpeg:
-        create_m4b(chapter_mp3_files, filename)
+        create_m4b(chapter_mp3_files, filename, title, creator)
 
 
 def extract_texts(chapters):
@@ -99,6 +103,9 @@ def is_chapter(c):
     ch = r"ch\d{1,3}"
     if re.search(ch, name):
         return True
+    chap = r"chap\d{1,3}"
+    if re.search(chap, name):
+        return True
     if 'chapter' in name:
         return True
 
@@ -117,7 +124,7 @@ def find_chapters(book, verbose=False):
 
 
 def pick_chapters(book):
-    all_chapters_names = [c.get_name() for c in book.get_items()]
+    all_chapters_names = [c.get_name() for c in book.get_items() if c.get_type() == ebooklib.ITEM_DOCUMENT]
     title = 'Select which chapters to read in the audiobook (in the desired order to be added to the audiobook)'
     selected_chapters_names = pick(all_chapters_names, title, multiselect=True, min_selection_count=1)
     selected_chapters_names = [c[0] for c in selected_chapters_names]
@@ -145,18 +152,23 @@ def strfdelta(tdelta, fmt='{D:02}d {H:02}h {M:02}m {S:02}s'):
     return f.format(fmt, **values)
 
 
-def create_m4b(chaptfer_files, filename):
+def create_m4b(chapter_files, filename, title, author):
     tmp_filename = filename.replace('.epub', '.tmp.m4a')
     if not Path(tmp_filename).exists():
         combined_audio = AudioSegment.empty()
-        for wav_file in chaptfer_files:
+        for wav_file in chapter_files:
             audio = AudioSegment.from_wav(wav_file)
             combined_audio += audio
         print('Converting to Mp4...')
         combined_audio.export(tmp_filename, format="mp4", codec="aac", bitrate="64k")
     final_filename = filename.replace('.epub', '.m4b')
     print('Creating M4B file...')
-    proc = subprocess.run(['ffmpeg', '-i', f'{tmp_filename}', '-c', 'copy', '-f', 'mp4', f'{final_filename}'])
+    proc = subprocess.run([
+        'ffmpeg', '-i', f'{tmp_filename}', '-c', 'copy', '-f', 'mp4',
+        '-metadata', f'title={title}',
+        '-metadata', f'author={author}',
+        f'{final_filename}'
+    ])
     Path(tmp_filename).unlink()
     if proc.returncode == 0:
         print(f'{final_filename} created. Enjoy your audiobook.')
@@ -179,13 +191,14 @@ def cli_main():
     parser.add_argument('epub_file_path', help='Path to the epub file')
     parser.add_argument('-l', '--lang', default='en-gb', help='Language code: en-gb, en-us, fr-fr, ja, ko, cmn')
     parser.add_argument('-v', '--voice', default=default_voice, help=f'Choose narrating voice: {voices_str}')
-    parser.add_argument('-p', '--pick', default=False, help=f'Manually select which chapters to read in the audiobook',
+    parser.add_argument('-p', '--pick', default=False, help=f'Interactively select which chapters to read in the audiobook',
                         action='store_true')
+    parser.add_argument('-s', '--speed', default=1.0, help=f'Set speed from 0.5 to 2.0', type=float)
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
     args = parser.parse_args()
-    main(kokoro, args.epub_file_path, args.lang, args.voice, args.pick)
+    main(kokoro, args.epub_file_path, args.lang, args.voice, args.pick, args.speed)
 
 
 if __name__ == '__main__':

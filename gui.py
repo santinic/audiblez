@@ -1,8 +1,9 @@
 import tkinter as tk
 from tkinter import filedialog, ttk
-from audiblez import main, get_kokoro, get_voice_list
+from engine import main, get_kokoro, get_voice_list
 import sys
 import threading
+import onnxruntime as ort
 
 
 class TextRedirector:
@@ -19,11 +20,24 @@ class TextRedirector:
         pass
 
 
+def get_language_from_voice(voice):
+    if voice.startswith("a"):
+        return "en-us"
+    elif voice.startswith("b"):
+        return "en-gb"
+    else:
+        print("Voice not recognized.")
+        exit(1)
+
+
 def start_gui():
     root = tk.Tk()
     root.title('Audiblez')
-    root.geometry('600x400')
+    root.geometry('600x600')
     root.resizable(True, True)
+
+    # ui element variables
+    pick_chapters_var = tk.BooleanVar()
 
     def select_file():
         file_path = filedialog.askopenfilename(
@@ -39,7 +53,11 @@ def start_gui():
             # Redirect stdout to Text widget
             sys.stdout = TextRedirector(output_text)
             voice = voice_combo.get()
-            threading.Thread(target=main, args=(kokoro, file_path, "en-gb", voice, False, 1.0)).start()
+            provider = providers_combo.get()
+            speed = speed_scale.get()
+            pick_chapters = pick_chapters_var.get()
+            language = get_language_from_voice(voice)
+            threading.Thread(target=main, args=(kokoro, file_path, language, voice, pick_chapters, speed, [provider])).start()
     
     file_button = tk.Button(
         root,
@@ -53,6 +71,46 @@ def start_gui():
 
     file_label = tk.Label(root, text="")
     file_label.pack(pady=5)
+
+    # add a check box to pick or not pick chapters
+    pick_chapters_check = tk.Checkbutton(
+        root,
+        text="Pick chapters",
+        variable=pick_chapters_var,
+        font=('Arial', 12)
+    )
+
+    pick_chapters_check.pack(pady=5)
+
+    # add a scale to set speed
+    speed_label = tk.Label(root, text="Set speed:", font=('Arial', 12))
+    speed_label.pack(pady=5)
+
+    speed_scale = tk.Scale(
+        root,
+        from_=0.5,
+        to=2.0,
+        resolution=0.1,
+        orient=tk.HORIZONTAL,
+        font=('Arial', 12)
+    )
+    speed_scale.set(1.0)
+    speed_scale.pack(pady=5)
+
+    # add a combo box with ONNX providers
+    available_providers = ort.get_available_providers()
+    default_provider = [p for p in available_providers if "CPU" in p][0]
+    providers_label = tk.Label(root, text="Select ONNX providers:", font=('Arial', 12))
+    providers_label.pack(pady=5)
+
+    providers_combo = ttk.Combobox(
+        root,
+        values=available_providers,
+        state="readonly",
+        font=('Arial', 12)
+    )
+    providers_combo.set(default_provider)  # Set default selection
+    providers_combo.pack(pady=5)
 
     output_text = tk.Text(root, height=10, width=50, bg="black", fg="white", font=('Arial', 12))
     output_text.pack(pady=20, padx=20, fill=tk.BOTH, expand=True)

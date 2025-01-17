@@ -19,9 +19,21 @@ from kokoro_onnx import Kokoro
 from ebooklib import epub
 from pydub import AudioSegment
 from pick import pick
+import onnxruntime as ort
 
 
-def main(kokoro, file_path, lang, voice, pick_manually, speed):
+def main(kokoro, file_path, lang, voice, pick_manually, speed, providers):
+    # Set ONNX providers if specified
+    if providers:
+        available_providers = ort.get_available_providers()
+        invalid_providers = [p for p in providers if p not in available_providers]
+        if invalid_providers:
+            print(f"Invalid ONNX providers: {', '.join(invalid_providers)}")
+            print(f"Available providers: {', '.join(available_providers)}")
+            sys.exit(1)
+        kokoro.sess.set_providers(providers)
+        print(f"Using ONNX providers: {', '.join(providers)}")
+    
     filename = Path(file_path).name
     with warnings.catch_warnings():
         book = epub.read_epub(file_path)
@@ -191,6 +203,11 @@ def cli_main():
     epilog = 'example:\n' + \
              '  audiblez book.epub -l en-us -v af_sky'
     default_voice = 'af_sky' if 'af_sky' in voices else voices[0]
+
+    # Get available ONNX providers
+    available_providers = ort.get_available_providers()
+    providers_help = f"Available ONNX providers: {', '.join(available_providers)}"
+
     parser = argparse.ArgumentParser(epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('epub_file_path', help='Path to the epub file')
     parser.add_argument('-l', '--lang', default='en-gb', help='Language code: en-gb, en-us, fr-fr, ja, ko, cmn')
@@ -198,8 +215,10 @@ def cli_main():
     parser.add_argument('-p', '--pick', default=False, help=f'Interactively select which chapters to read in the audiobook',
                         action='store_true')
     parser.add_argument('-s', '--speed', default=1.0, help=f'Set speed from 0.5 to 2.0', type=float)
+    parser.add_argument('--providers', nargs='+', metavar='PROVIDER', help=f"Specify ONNX providers. {providers_help}")
+    
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
     args = parser.parse_args()
-    main(kokoro, args.epub_file_path, args.lang, args.voice, args.pick, args.speed)
+    main(kokoro, args.epub_file_path, args.lang, args.voice, args.pick, args.speed, args.providers)

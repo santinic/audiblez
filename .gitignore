@@ -8,3 +8,4 @@ epub
 *.json
 *.onnx
 dist
+.venv

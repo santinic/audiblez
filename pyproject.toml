@@ -1,6 +1,6 @@
 [project]
 name = "audiblez"
-version = "0.1.12"
+version = "0.2.0"
 description = "Generate audiobooks from e-books (epub to wav/m4b)"
 authors = [
     { name = "Claudio Santini", email = "hireclaudio@gmail.com" }

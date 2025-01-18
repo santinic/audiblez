@@ -30,6 +30,29 @@ def get_language_from_voice(voice):
         exit(1)
 
 
+LANGUAGE_TO_FLAG = {
+    "en-us": "🇺🇸",
+    "en-gb": "🇬🇧",
+    "fr-fr": "🇫🇷",
+    "ja": "🇯🇵",
+    "ko": "🇰🇷",
+    "cmn": "🇨🇳"
+}
+
+
+def emojify_voice(voice):
+    language = get_language_from_voice(voice)
+    if language in LANGUAGE_TO_FLAG:
+        return LANGUAGE_TO_FLAG[language] + " " + voice
+    return voice
+
+
+def deemojify_voice(voice):
+    if voice[:2] in LANGUAGE_TO_FLAG.values():
+        return voice[3:]
+    return voice
+
+
 def start_gui():
     root = tk.Tk()
     root.title('Audiblez')
@@ -47,18 +70,24 @@ def start_gui():
         if file_path:
             file_label.config(text=file_path)
     
-    def convert():    
+    def convert():
         def enable_controls():
-            speed_scale.configure(state='normal')
+            speed_entry.configure(state='normal')
             providers_combo.configure(state='normal')
             voice_combo.configure(state='normal')
         
         def run_conversion():
             try:
-                main(kokoro, file_path, language, voice, pick_chapters, speed, [provider])
+                main(kokoro, file_path, language, voice, pick_chapters, float(speed), [provider])
             finally:
                 # Ensure controls are re-enabled even if an error occurs
                 root.after(0, enable_controls)
+        
+        if not check_speed_range():
+            warning = "Please enter a speed value between 0.5 and 2.0."
+            print(warning)
+            # create a warning message box to say this
+            messagebox.showwarning("Warning", warning)
 
         if file_label.cget("text"):
             kokoro = get_kokoro()        
@@ -68,12 +97,12 @@ def start_gui():
             # Redirect stdout to Text widget
             sys.stdout = TextRedirector(output_text)
             file_path = file_label.cget("text")
-            voice = voice_combo.get()
+            voice = deemojify_voice(voice_combo.get())
             provider = providers_combo.get()
-            speed = speed_scale.get()
+            speed = speed_entry.get()
             pick_chapters = pick_chapters_var.get()
             language = get_language_from_voice(voice)
-            speed_scale.configure(state='disabled')
+            speed_entry.configure(state='disabled')
             providers_combo.configure(state='disabled')
             voice_combo.configure(state='disabled')
             threading.Thread(target=run_conversion).start()
@@ -85,7 +114,6 @@ def start_gui():
             # create a warning message box to say this
             messagebox.showwarning("Warning", warning)
 
-    
     file_button = tk.Button(
         root,
         text='Select epub file',
@@ -127,16 +155,26 @@ def start_gui():
     speed_label = tk.Label(voice_frame, text="Set speed:", font=('Arial', 12))
     speed_label.pack(side=tk.LEFT, pady=5, padx=5)
 
-    speed_scale = tk.Scale(
+    def check_speed_range(event=None):
+        try:
+            value = float(speed_entry.get())
+            if 0.5 <= value <= 2.0:
+                speed_entry.configure(fg='white')
+                return True
+            else:
+                speed_entry.configure(fg='red')
+        except ValueError:
+            speed_entry.configure(fg='red')
+        return False
+
+    speed_entry = tk.Entry(
         voice_frame,
-        from_=0.5,
-        to=2.0,
-        resolution=0.1,
-        orient=tk.HORIZONTAL,
+        width=5,
         font=('Arial', 12)
     )
-    speed_scale.set(1.0)
-    speed_scale.pack(side=tk.LEFT, pady=5, padx=5)
+    speed_entry.insert(0, "1.0")
+    speed_entry.pack(side=tk.LEFT, pady=5, padx=5)
+    speed_entry.bind('<KeyRelease>', check_speed_range)
 
     # add a combo box with ONNX providers
     available_providers = ort.get_available_providers()
@@ -158,7 +196,7 @@ def start_gui():
     voice_label.pack(side=tk.LEFT, pady=5, padx=5)
 
     # add a combo box with voice options
-    voices = get_voice_list()
+    voices = [emojify_voice(x) for x in get_voice_list()]
     voice_combo = ttk.Combobox(
         voice_frame,
         values=voices,

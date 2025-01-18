@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, ttk, messagebox
 from engine import main, get_kokoro, get_voice_list
 import sys
 import threading
@@ -46,18 +46,45 @@ def start_gui():
         )
         if file_path:
             file_label.config(text=file_path)
+    
+    def convert():    
+        def enable_controls():
+            speed_scale.configure(state='normal')
+            providers_combo.configure(state='normal')
+            voice_combo.configure(state='normal')
+        
+        def run_conversion():
+            try:
+                main(kokoro, file_path, language, voice, pick_chapters, speed, [provider])
+            finally:
+                # Ensure controls are re-enabled even if an error occurs
+                root.after(0, enable_controls)
+
+        if file_label.cget("text"):
             kokoro = get_kokoro()        
             output_text.configure(state='normal')
             output_text.delete(1.0, tk.END)
             output_text.configure(state='disabled')
             # Redirect stdout to Text widget
             sys.stdout = TextRedirector(output_text)
+            file_path = file_label.cget("text")
             voice = voice_combo.get()
             provider = providers_combo.get()
             speed = speed_scale.get()
             pick_chapters = pick_chapters_var.get()
             language = get_language_from_voice(voice)
-            threading.Thread(target=main, args=(kokoro, file_path, language, voice, pick_chapters, speed, [provider])).start()
+            speed_scale.configure(state='disabled')
+            providers_combo.configure(state='disabled')
+            voice_combo.configure(state='disabled')
+            threading.Thread(target=run_conversion).start()
+            # when this thread finishes, re-enable the buttons
+
+        else:
+            warning = "Please select an epub file first."
+            print(warning)
+            # create a warning message box to say this
+            messagebox.showwarning("Warning", warning)
+
     
     file_button = tk.Button(
         root,
@@ -72,6 +99,16 @@ def start_gui():
     file_label = tk.Label(root, text="")
     file_label.pack(pady=5)
 
+    start_convert_button = tk.Button(
+        root,
+        text='Convert epub',
+        command=convert,
+        bg='white',
+        fg='black',
+        font=('Arial', 12)
+    )
+    start_convert_button.pack(pady=20)
+
     # add a check box to pick or not pick chapters
     pick_chapters_check = tk.Checkbutton(
         root,
@@ -80,6 +117,7 @@ def start_gui():
         font=('Arial', 12)
     )
 
+    pick_chapters_check.configure(state='disabled')
     pick_chapters_check.pack(pady=5)
 
     # add a scale to set speed

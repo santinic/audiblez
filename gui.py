@@ -33,7 +33,7 @@ def get_language_from_voice(voice):
 def start_gui():
     root = tk.Tk()
     root.title('Audiblez')
-    root.geometry('600x600')
+    root.geometry('900x600')
     root.resizable(True, True)
 
     # ui element variables
@@ -120,12 +120,15 @@ def start_gui():
     pick_chapters_check.configure(state='disabled')
     pick_chapters_check.pack(pady=5)
 
+    voice_frame = tk.Frame(root)
+    voice_frame.pack(pady=5, padx=5)
+
     # add a scale to set speed
-    speed_label = tk.Label(root, text="Set speed:", font=('Arial', 12))
-    speed_label.pack(pady=5)
+    speed_label = tk.Label(voice_frame, text="Set speed:", font=('Arial', 12))
+    speed_label.pack(side=tk.LEFT, pady=5, padx=5)
 
     speed_scale = tk.Scale(
-        root,
+        voice_frame,
         from_=0.5,
         to=2.0,
         resolution=0.1,
@@ -133,43 +136,43 @@ def start_gui():
         font=('Arial', 12)
     )
     speed_scale.set(1.0)
-    speed_scale.pack(pady=5)
+    speed_scale.pack(side=tk.LEFT, pady=5, padx=5)
 
     # add a combo box with ONNX providers
     available_providers = ort.get_available_providers()
     default_provider = [p for p in available_providers if "CPU" in p][0]
-    providers_label = tk.Label(root, text="Select ONNX providers:", font=('Arial', 12))
-    providers_label.pack(pady=5)
+    providers_label = tk.Label(voice_frame, text="Select ONNX providers:", font=('Arial', 12))
+    providers_label.pack(side=tk.LEFT, pady=5, padx=5)
 
     providers_combo = ttk.Combobox(
-        root,
+        voice_frame,
         values=available_providers,
         state="readonly",
         font=('Arial', 12)
     )
     providers_combo.set(default_provider)  # Set default selection
-    providers_combo.pack(pady=5)
+    providers_combo.pack(side=tk.LEFT, pady=5, padx=5)
+    
+    # add a combo box with voice options
+    voice_label = tk.Label(voice_frame, text="Select Voice:", font=('Arial', 12))
+    voice_label.pack(side=tk.LEFT, pady=5, padx=5)
+
+    # add a combo box with voice options
+    voices = get_voice_list()
+    voice_combo = ttk.Combobox(
+        voice_frame,
+        values=voices,
+        state="readonly",
+        font=('Arial', 12)
+    )
+    voice_combo.set(voices[0])  # Set default selection
+    voice_combo.pack(side=tk.LEFT, pady=10, padx=5)
 
     output_text = tk.Text(root, height=10, width=50, bg="black", fg="white", font=('Arial', 12))
     output_text.pack(pady=20, padx=20, fill=tk.BOTH, expand=True)
     output_text.tag_configure("red", foreground="white")
     output_text.insert(tk.END, "Output here....", "red")
     output_text.configure(state='disabled')
-    
-    # add a combo box with voice options
-    voice_label = tk.Label(root, text="Select Voice:", font=('Arial', 12))
-    voice_label.pack(pady=5)
-
-    # add a combo box with voice options
-    voices = get_voice_list()
-    voice_combo = ttk.Combobox(
-        root, 
-        values=voices,
-        state="readonly",
-        font=('Arial', 12)
-    )
-    voice_combo.set(voices[0])  # Set default selection
-    voice_combo.pack(pady=10)
 
     # start main loop
     root.mainloop()

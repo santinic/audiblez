@@ -3,7 +3,11 @@ from tkinter import filedialog, ttk, messagebox
 from engine import main, get_kokoro, get_voice_list
 import sys
 import threading
+import io
 import onnxruntime as ort
+from ebooklib import epub
+import ebooklib
+from PIL import Image, ImageTk
 
 
 class TextRedirector:
@@ -58,7 +62,6 @@ def start_gui():
     root.title('Audiblez')
     root.geometry('900x600')
     root.resizable(True, True)
-
 
     voice_frame = tk.Frame(root)
     voice_frame.pack(pady=5, padx=5)
@@ -118,9 +121,35 @@ def start_gui():
     voice_combo.set(voices[0])  # Set default selection
     voice_combo.pack(side=tk.LEFT, pady=10, padx=5)
 
-
     # ui element variables
     pick_chapters_var = tk.BooleanVar()
+    pil_image = Image.new('RGB', (200, 300), 'gray')
+    cover_image = ImageTk.PhotoImage(pil_image)  # or use a default image
+    cover_label = tk.Label(root, image=cover_image)
+
+    def resized_image(item):
+        image_data = item.get_content()
+        image = Image.open(io.BytesIO(image_data))
+        image.thumbnail((200, 300))
+        ratio = min(200/image.width, 300/image.height)
+        new_size = (int(image.width * ratio), int(image.height * ratio))
+        # Resize with high-quality resampling
+        resized = image.resize(new_size, Image.Resampling.LANCZOS)
+        # Create new image with gray background
+        background = Image.new('RGB', (200, 300), 'gray')
+        # Paste resized image centered
+        offset = ((200 - new_size[0])//2, (300 - new_size[1])//2)
+        background.paste(resized, offset)
+        return ImageTk.PhotoImage(background)
+
+    def get_cover_image(book):
+        for item in book.get_items():
+            if item.get_type() == ebooklib.ITEM_COVER:
+                return resized_image(item)
+            if item.get_type() == ebooklib.ITEM_IMAGE:
+                if 'cover' in item.get_name().lower():
+                    return resized_image(item)
+        return None
 
     def select_file():
         file_path = filedialog.askopenfilename(
@@ -129,6 +158,14 @@ def start_gui():
         )
         if file_path:
             file_label.config(text=file_path)
+            book = epub.read_epub(file_path)
+            cover_image_from_book = get_cover_image(book)
+            if cover_image_from_book:
+                cover_label.image = cover_image_from_book
+                cover_label.configure(image=cover_image_from_book)
+            else:
+                cover_label.image = cover_image
+                cover_label.configure(image=cover_image)
     
     def convert():
         def enable_controls():
@@ -190,6 +227,9 @@ def start_gui():
     file_label = tk.Label(file_frame, text="")
     file_label.pack(side=tk.LEFT, pady=5)
 
+    cover_label.image = cover_image  # Keep a reference to prevent garbage collection
+    cover_label.pack(pady=10)
+    
     start_convert_button = tk.Button(
         root,
         text='Convert epub',

@@ -7,7 +7,7 @@ Audiblez generates `.m4b` audiobooks from regular `.epub` e-books,
 using Kokoro's high-quality speech synthesis.
 
 [Kokoro v0.19](https://huggingface.co/hexgrad/Kokoro-82M) is a recently published text-to-speech model with just 82M params and a very natural-sounding output.
-It's released under an Apache license, and it was trained on < 100 hours of audio.
+It's released under an Apache licence, and it was trained on < 100 hours of audio.
 It currently supports American, British English, French, Korean, Japanese, and Mandarin languages and a variety of very good voices.
 
 On my M2 MacBook Pro, **it takes about 2 hours to convert to mp3 the Selfish Gene by Richard Dawkins**, which is about 100,000 words (or 600,000 characters),
@@ -87,6 +87,6 @@ audiblez book.epub -l en-gb -v af_sky --providers CUDAExecutionProvider CPUExecu
 ```
 
 ## Author
-by [Claudio Santini](https://claudio.uk) in 2025, distributed under MIT license.
+by [Claudio Santini](https://claudio.uk) in 2025, distributed under MIT licence.
 
 Related article: [Convert E-books into audiobooks with Kokoro](https://claudio.uk/posts/epub-to-audiobook.html)

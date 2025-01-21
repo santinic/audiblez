@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from string import Formatter
 from bs4 import BeautifulSoup
-from kokoro_onnx import Kokoro
+from kokoro_onnx import Kokoro # a library that provides TTS functionality, the Kokoro class initializes the TTS Model
 from ebooklib import epub
 from pydub import AudioSegment
 from pick import pick
@@ -37,8 +37,8 @@ def main(kokoro, file_path, lang, voice, pick_manually, speed, providers):
     filename = Path(file_path).name
     with warnings.catch_warnings():
         book = epub.read_epub(file_path)
-    title = book.get_metadata('DC', 'title')[0][0]
-    creator = book.get_metadata('DC', 'creator')[0][0]
+    title = book.get_metadata('DC', 'title')[0][0] #Extract the title of the book from metadata (Dublin core)
+    creator = book.get_metadata('DC', 'creator')[0][0] #Extract the creator of the book from metadata (Dublin core)
     intro = f'{title} by {creator}'
     print(intro)
     print('Found Chapters:', [c.get_name() for c in book.get_items() if c.get_type() == ebooklib.ITEM_DOCUMENT])
@@ -48,7 +48,7 @@ def main(kokoro, file_path, lang, voice, pick_manually, speed, providers):
         chapters = find_chapters(book)
     print('Selected chapters:', [c.get_name() for c in chapters])
     texts = extract_texts(chapters)
-    has_ffmpeg = shutil.which('ffmpeg') is not None
+    has_ffmpeg = shutil.which('ffmpeg') is not None #in the code it is used to combine audio chapters into one audiobook file
     if not has_ffmpeg:
         print('\033[91m' + 'ffmpeg not found. Please install ffmpeg to create mp3 and m4b audiobook files.' + '\033[0m')
     total_chars = sum([len(t) for t in texts])
@@ -93,12 +93,12 @@ def main(kokoro, file_path, lang, voice, pick_manually, speed, providers):
 
 
 def extract_texts(chapters):
-    texts = []
+    texts = [] # store the extracted text from each chapter
     for chapter in chapters:
         xml = chapter.get_body_content()
         soup = BeautifulSoup(xml, features='lxml')
         chapter_text = ''
-        html_content_tags = ['title', 'p', 'h1', 'h2', 'h3', 'h4']
+        html_content_tags = ['title', 'p', 'h1', 'h2', 'h3', 'h4'] # some tags such as titles, paragraphs, headings
         for child in soup.find_all(html_content_tags):
             inner_text = child.text.strip() if child.text else ""
             if inner_text:
@@ -123,6 +123,7 @@ def is_chapter(c):
 
 
 def find_chapters(book, verbose=False):
+    # Filter items of type ITEM_DOCUMENT and check if they are chapters using is_chapter()
     chapters = [c for c in book.get_items() if c.get_type() == ebooklib.ITEM_DOCUMENT and is_chapter(c)]
     if verbose:
         for item in book.get_items():
@@ -148,7 +149,7 @@ def strfdelta(tdelta, fmt='{D:02}d {H:02}h {M:02}m {S:02}s'):
     remainder = int(tdelta)
     f = Formatter()
     desired_fields = [field_tuple[1] for field_tuple in f.parse(fmt)]
-    possible_fields = ('W', 'D', 'H', 'M', 'S')
+    possible_fields = ('W', 'D', 'H', 'M', 'S') # (weeks, days, hours, minutes, seconds)
     constants = {'W': 604800, 'D': 86400, 'H': 3600, 'M': 60, 'S': 1}
     values = {}
     for field in possible_fields:

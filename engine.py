@@ -22,7 +22,7 @@ from pick import pick
 import onnxruntime as ort
 
 
-def main(kokoro, file_path, lang, voice, pick_manually, speed, providers):
+def main(kokoro, file_path, lang, voice, speed, providers, chapters_by_name):
     # Set ONNX providers if specified
     if providers:
         available_providers = ort.get_available_providers()
@@ -41,12 +41,14 @@ def main(kokoro, file_path, lang, voice, pick_manually, speed, providers):
     creator = book.get_metadata('DC', 'creator')[0][0]
     intro = f'{title} by {creator}'
     print(intro)
-    print('Found Chapters:', [c.get_name() for c in book.get_items() if c.get_type() == ebooklib.ITEM_DOCUMENT])
-    if pick_manually:
-        chapters = pick_chapters(book)
-    else:
-        chapters = find_chapters(book)
-    print('Selected chapters:', [c.get_name() for c in chapters])
+
+    chapters = []
+    for chapter_by_name in chapters_by_name:
+        for item in book.get_items():
+            if item.get_name() == chapter_by_name:
+                chapters.append(item)
+                break
+
     texts = extract_texts(chapters)
     has_ffmpeg = shutil.which('ffmpeg') is not None
     if not has_ffmpeg:
@@ -221,4 +223,16 @@ def cli_main():
         parser.print_help(sys.stderr)
         sys.exit(1)
     args = parser.parse_args()
-    main(kokoro, args.epub_file_path, args.lang, args.voice, args.pick, args.speed, args.providers)
+
+    with warnings.catch_warnings():
+        book = epub.read_epub(args.epub_file_path)
+
+    print('Found Chapters:', [c.get_name() for c in book.get_items() if c.get_type() == ebooklib.ITEM_DOCUMENT])
+    if args.pick:
+        chapters = pick_chapters(book)
+    else:
+        chapters = find_chapters(book)
+    print('Selected chapters:', [c.get_name() for c in chapters])
+    chapters_by_name = [c.get_name() for c in chapters]
+
+    main(kokoro, args.epub_file_path, args.lang, args.voice, args.speed, args.providers, chapters_by_name)

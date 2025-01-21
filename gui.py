@@ -60,8 +60,8 @@ def deemojify_voice(voice):
 def start_gui():
     root = tk.Tk()
     root.title('Audiblez')
-    root.geometry('900x600')
-    root.resizable(True, True)
+    root.geometry('900x900')
+    root.resizable(False, False)
 
     voice_frame = tk.Frame(root)
     voice_frame.pack(pady=5, padx=5)
@@ -122,10 +122,10 @@ def start_gui():
     voice_combo.pack(side=tk.LEFT, pady=10, padx=5)
 
     # ui element variables
-    pick_chapters_var = tk.BooleanVar()
     pil_image = Image.new('RGB', (200, 300), 'gray')
     cover_image = ImageTk.PhotoImage(pil_image)  # or use a default image
     cover_label = tk.Label(root, image=cover_image)
+    chapters_by_name = []
 
     def resized_image(item):
         image_data = item.get_content()
@@ -166,6 +166,14 @@ def start_gui():
             else:
                 cover_label.image = cover_image
                 cover_label.configure(image=cover_image)
+            
+            # set chapters
+            chapters_by_name.clear()
+            chapters_listbox.delete(0, tk.END)
+            for item in book.get_items():
+                if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                    chapters_by_name.append(item.get_name())
+                    chapters_listbox.insert(tk.END, item.get_name())
     
     def convert():
         def enable_controls():
@@ -175,7 +183,7 @@ def start_gui():
         
         def run_conversion():
             try:
-                main(kokoro, file_path, language, voice, pick_chapters, float(speed), [provider])
+                main(kokoro, file_path, language, voice, float(speed), [provider], chapters_by_name)
             finally:
                 # Ensure controls are re-enabled even if an error occurs
                 root.after(0, enable_controls)
@@ -197,7 +205,6 @@ def start_gui():
             voice = deemojify_voice(voice_combo.get())
             provider = providers_combo.get()
             speed = speed_entry.get()
-            pick_chapters = pick_chapters_var.get()
             language = get_language_from_voice(voice)
             speed_entry.configure(state='disabled')
             providers_combo.configure(state='disabled')
@@ -229,7 +236,99 @@ def start_gui():
 
     cover_label.image = cover_image  # Keep a reference to prevent garbage collection
     cover_label.pack(pady=10)
+
+    # Create frame for listbox and scrollbar
+    chapters_frame = ttk.Frame(root)
+    chapters_frame.pack(expand=True, padx=10, pady=10)
+
+    # Create left frame for chapters_listbox
+    left_frame = ttk.Frame(chapters_frame)
+    left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    # Create middle frame for buttons
+    middle_frame = ttk.Frame(chapters_frame)
+    middle_frame.pack(side=tk.LEFT, padx=10)
+
+    # Create right frame for selected chapters
+    right_frame = ttk.Frame(chapters_frame)
+    right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    # Left listbox and scrollbar
+    scrollbar = ttk.Scrollbar(left_frame, orient=tk.VERTICAL)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    chapters_listbox = tk.Listbox(
+        left_frame,
+        selectmode=tk.MULTIPLE,
+        yscrollcommand=scrollbar.set,
+        font=('Arial', 12),
+        width=40,
+        height=10
+    )
+    chapters_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.config(command=chapters_listbox.yview)
+
+    def on_add_select():
+        selected = chapters_listbox.curselection()
+        for i in selected:
+            chapters_selected_listbox.insert(tk.END, chapters_listbox.get(i))
+
+    def on_remove_select():
+        selected = chapters_selected_listbox.curselection()
+        for i in selected:
+            chapters_selected_listbox.delete(i)
     
+    def on_add_all():
+        for i in range(chapters_listbox.size()):
+            chapters_selected_listbox.insert(tk.END, chapters_listbox.get(i))
+
+
+    # Middle buttons
+    add_button = tk.Button(
+        middle_frame,
+        text='Add selected chapters',
+        bg='white',
+        fg='black',
+        font=('Arial', 12),
+        command=on_add_select
+    )
+    add_button.pack(pady=5)
+
+    remove_button = tk.Button(
+        middle_frame,
+        text='Remove selected chapters',
+        bg='white',
+        fg='black',
+        font=('Arial', 12),
+        command=on_remove_select
+    )
+    remove_button.pack(pady=5)
+
+    add_all_button = tk.Button(
+        middle_frame,
+        text='Add all chapters',
+        bg='white',
+        fg='black',
+        font=('Arial', 12),
+        command=on_add_all
+    )
+    add_all_button.pack(pady=5)
+
+    # Right listbox and scrollbar
+    scrollbar_selected = ttk.Scrollbar(right_frame, orient=tk.VERTICAL)
+    scrollbar_selected.pack(side=tk.RIGHT, fill=tk.Y)
+
+    chapters_selected_listbox = tk.Listbox(
+        right_frame,
+        selectmode=tk.MULTIPLE,
+        yscrollcommand=scrollbar_selected.set,
+        font=('Arial', 12),
+        width=40,
+        height=10
+    )
+    chapters_selected_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar_selected.config(command=chapters_selected_listbox.yview)
+
     start_convert_button = tk.Button(
         root,
         text='Convert epub',
@@ -239,17 +338,6 @@ def start_gui():
         font=('Arial', 12)
     )
     start_convert_button.pack(pady=20)
-
-    # add a check box to pick or not pick chapters
-    pick_chapters_check = tk.Checkbutton(
-        root,
-        text="Pick chapters",
-        variable=pick_chapters_var,
-        font=('Arial', 12)
-    )
-
-    pick_chapters_check.configure(state='disabled')
-    pick_chapters_check.pack(pady=5)
 
     output_text = tk.Text(root, height=10, width=50, bg="black", fg="white", font=('Arial', 12))
     output_text.pack(pady=20, padx=20, fill=tk.BOTH, expand=True)

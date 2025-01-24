@@ -47,8 +47,8 @@ def main(kokoro, file_path, lang, voice, pick_manually, speed, providers):
     filename = Path(file_path).name
     warnings.simplefilter("ignore")
     book = epub.read_epub(file_path)
-    title = book.get_metadata('DC', 'title')[0][0]
-    creator = book.get_metadata('DC', 'creator')[0][0]
+    title = book.get_metadata('DC', 'title')[0][0] #Extract the title of the book from metadata (Dublin core)
+    creator = book.get_metadata('DC', 'creator')[0][0] #Extract the creator of the book from metadata (Dublin core)
 
     cover_maybe = [c for c in book.get_items() if c.get_type() == ebooklib.ITEM_COVER]
     cover_image = cover_maybe[0].get_content() if cover_maybe else b""
@@ -65,7 +65,7 @@ def main(kokoro, file_path, lang, voice, pick_manually, speed, providers):
     print('Automatically selected chapters:', [c.get_name() for c in chapters])
     texts = extract_texts(chapters)
 
-    has_ffmpeg = shutil.which('ffmpeg') is not None
+    has_ffmpeg = shutil.which('ffmpeg') is not None #in the code it is used to combine audio chapters into one audiobook file
     if not has_ffmpeg:
         print('\033[91m' + 'ffmpeg not found. Please install ffmpeg to create mp3 and m4b audiobook files.' + '\033[0m')
 
@@ -161,7 +161,7 @@ def strfdelta(tdelta, fmt='{D:02}d {H:02}h {M:02}m {S:02}s'):
     remainder = int(tdelta)
     f = Formatter()
     desired_fields = [field_tuple[1] for field_tuple in f.parse(fmt)]
-    possible_fields = ('W', 'D', 'H', 'M', 'S')
+    possible_fields = ('W', 'D', 'H', 'M', 'S') # some tags such as titles, paragraphs, headings
     constants = {'W': 604800, 'D': 86400, 'H': 3600, 'M': 60, 'S': 1}
     values = {}
     for field in possible_fields:

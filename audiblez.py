@@ -19,10 +19,8 @@ from kokoro import KPipeline
 from ebooklib import epub
 from pydub import AudioSegment
 from pick import pick
-import onnxruntime as ort
 from gui import start_gui
 from tempfile import NamedTemporaryFile
-
 
 sample_rate = 24000
 voices = [
@@ -34,18 +32,7 @@ voices = [
 ]
 
 
-def main(kokoro, pipeline, file_path, lang, voice, pick_manually, speed, providers, chapters_by_name):
-    # Set ONNX providers if specified
-    if providers:
-        available_providers = ort.get_available_providers()
-        invalid_providers = [p for p in providers if p not in available_providers]
-        if invalid_providers:
-            print(f"Invalid ONNX providers: {', '.join(invalid_providers)}")
-            print(f"Available providers: {', '.join(available_providers)}")
-            sys.exit(1)
-        kokoro.sess.set_providers(providers)
-        print(f"Using ONNX providers: {', '.join(providers)}")
-
+def main(pipeline, file_path, voice, pick_manually, speed, chapters_by_name):
     filename = Path(file_path).name
     warnings.simplefilter("ignore")
     book = epub.read_epub(file_path)
@@ -75,7 +62,8 @@ def main(kokoro, pipeline, file_path, lang, voice, pick_manually, speed, provide
             chapters = pick_chapters(book)
         else:
             chapters = find_chapters(book)
-        print('Automatically selected chapters:', [c.get_name() for c in chapters])
+            print('Automatically selected chapters:', [c.get_name() for c in chapters])
+
     texts = extract_texts(chapters)
 
     has_ffmpeg = shutil.which('ffmpeg') is not None
@@ -223,22 +211,6 @@ def create_m4b(chapter_files, filename, title, author, cover_image):
         print('Feel free to delete the intermediary .wav chapter files, the .m4b is all you need.')
 
 
-def get_kokoro():
-    if not Path('kokoro-v0_19.onnx').exists() or not Path('voices.json').exists():
-        print('Error: kokoro-v0_19.onnx and voices.json must be in the current directory. Please download them with:')
-        print('wget https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.onnx')
-        print('wget https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json')
-        sys.exit(1)
-    kokoro = Kokoro('kokoro-v0_19.onnx', 'voices.json')
-    return kokoro
-
-
-def get_voice_list():
-    kokoro = get_kokoro()
-    voices = list(kokoro.get_voices())
-    return voices
-
-
 def probe_duration(file_name):
     args = ['ffprobe', '-i', file_name, '-show_entries', 'format=duration', '-v', 'quiet', '-of', 'default=noprint_wrappers=1:nokey=1']
     proc = subprocess.run(args, capture_output=True, text=True, check=True)
@@ -260,8 +232,6 @@ def create_index_file(title, creator, chapter_mp3_files, durations):
 
 
 def cli_main():
-    kokoro = get_kokoro()
-    voices = list(kokoro.get_voices())
     voices_str = ', '.join(voices)
     epilog = 'example:\n' + \
              '  audiblez book.epub -l en-us -v af_sky'
@@ -283,11 +253,9 @@ def cli_main():
         torch.set_default_device('cuda')
     else:
         print('CUDA GPU not available. Defaulting to CPU')
-    
-    pipeline = KPipeline(lang_code=args.voice[0])  # a for american or b for british
-    kokoro = get_kokoro()
 
-    main(pipeline, kokoro, args.epub_file_path, args.lang, args.voice, args.pick, args.speed, args.providers, None)
+    pipeline = KPipeline(lang_code=args.voice[0])  # a for american or b for british
+    main(pipeline, args.epub_file_path, args.voice, args.pick, args.speed, args.providers, None)
 
 
 if __name__ == '__main__':

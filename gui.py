@@ -32,6 +32,16 @@ LANGUAGE_TO_FLAG = {
 }
 
 
+def get_language_from_voice(voice):
+    if voice.startswith("a"):
+        return "en-us"
+    elif voice.startswith("b"):
+        return "en-gb"
+    else:
+        print("Voice not recognized.")
+        exit(1)
+
+
 def emojify_voice(voice):
     language = get_language_from_voice(voice)
     if language in LANGUAGE_TO_FLAG:
@@ -78,22 +88,6 @@ def start_gui():
     speed_entry.insert(0, "1.0")
     speed_entry.pack(side=tk.LEFT, pady=5, padx=5)
     speed_entry.bind('<KeyRelease>', check_speed_range)
-
-    # add a combo box with ONNX providers
-    #available_providers = ort.get_available_providers()
-    #default_provider = [p for p in available_providers if "CPU" in p][0]
-    providers_label = tk.Label(voice_frame, text="Select ONNX providers:", font=('Arial', 12))
-    providers_label.pack(side=tk.LEFT, pady=5, padx=5)
-
-    providers_combo = ttk.Combobox(
-        voice_frame,
-        values=[],
-        state="readonly",
-        font=('Arial', 12)
-    )
-    providers_combo.configure(state='disabled')
-    #providers_combo.set(default_provider)  # Set default selection
-    providers_combo.pack(side=tk.LEFT, pady=5, padx=5)
     
     # add a combo box with voice options
     voice_label = tk.Label(voice_frame, text="Select Voice:", font=('Arial', 12))

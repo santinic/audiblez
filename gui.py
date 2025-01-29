@@ -1,11 +1,9 @@
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
-from engine import main, get_kokoro, get_voice_list
 import sys
 import threading
 import io
 import onnxruntime as ort
-from ebooklib import epub
 import ebooklib
 from PIL import Image, ImageTk
 
@@ -111,6 +109,7 @@ def start_gui():
     voice_label.pack(side=tk.LEFT, pady=5, padx=5)
 
     # add a combo box with voice options
+    from audiblez import get_voice_list
     voices = [emojify_voice(x) for x in get_voice_list()]
     voice_combo = ttk.Combobox(
         voice_frame,
@@ -158,7 +157,7 @@ def start_gui():
         )
         if file_path:
             file_label.config(text=file_path)
-            book = epub.read_epub(file_path)
+            book = ebooklib.epub.read_epub(file_path)
             cover_image_from_book = get_cover_image(book)
             if cover_image_from_book:
                 cover_label.image = cover_image_from_book
@@ -183,6 +182,7 @@ def start_gui():
         
         def run_conversion():
             try:
+                from audiblez import main
                 main(kokoro, file_path, language, voice, float(speed), [provider], chapters_by_name)
             finally:
                 # Ensure controls are re-enabled even if an error occurs
@@ -195,6 +195,7 @@ def start_gui():
             messagebox.showwarning("Warning", warning)
 
         if file_label.cget("text"):
+            from audiblez import get_kokoro
             kokoro = get_kokoro()        
             output_text.configure(state='normal')
             output_text.delete(1.0, tk.END)

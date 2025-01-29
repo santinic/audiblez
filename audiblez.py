@@ -19,6 +19,7 @@ from kokoro import KPipeline
 from ebooklib import epub
 from pydub import AudioSegment
 from pick import pick
+from gui import start_gui
 from tempfile import NamedTemporaryFile
 
 sample_rate = 24000
@@ -31,7 +32,7 @@ voices = [
 ]
 
 
-def main(pipeline, file_path, voice, pick_manually, speed):
+def main(pipeline, file_path, voice, pick_manually, speed, chapters_by_name):
     filename = Path(file_path).name
     warnings.simplefilter("ignore")
     book = epub.read_epub(file_path)
@@ -47,12 +48,22 @@ def main(pipeline, file_path, voice, pick_manually, speed):
 
     intro = f'{title} by {creator}'
     print(intro)
-    print('Found Chapters:', [c.get_name() for c in book.get_items() if c.get_type() == ebooklib.ITEM_DOCUMENT])
-    if pick_manually:
-        chapters = pick_chapters(book)
+
+    if chapters_by_name:
+        chapters = []
+        for chapter_by_name in chapters_by_name:
+            for item in book.get_items():
+                if item.get_name() == chapter_by_name:
+                    chapters.append(item)
+                    break
     else:
-        chapters = find_chapters(book)
-    print('Automatically selected chapters:', [c.get_name() for c in chapters])
+        print('Found Chapters:', [c.get_name() for c in book.get_items() if c.get_type() == ebooklib.ITEM_DOCUMENT])
+        if pick_manually:
+            chapters = pick_chapters(book)
+        else:
+            chapters = find_chapters(book)
+            print('Automatically selected chapters:', [c.get_name() for c in chapters])
+
     texts = extract_texts(chapters)
 
     has_ffmpeg = shutil.which('ffmpeg') is not None
@@ -244,8 +255,11 @@ def cli_main():
         print('CUDA GPU not available. Defaulting to CPU')
 
     pipeline = KPipeline(lang_code=args.voice[0])  # a for american or b for british
-    main(pipeline, args.epub_file_path, args.voice, args.pick, args.speed)
+    main(pipeline, args.epub_file_path, args.voice, args.pick, args.speed, None)
 
 
 if __name__ == '__main__':
-    cli_main()
+    if len(sys.argv) > 1:
+        cli_main(sys.argv)
+    else:
+        start_gui()

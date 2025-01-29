@@ -255,7 +255,7 @@ def cli_main():
         print('CUDA GPU not available. Defaulting to CPU')
 
     pipeline = KPipeline(lang_code=args.voice[0])  # a for american or b for british
-    main(pipeline, args.epub_file_path, args.voice, args.pick, args.speed, args.providers, None)
+    main(pipeline, args.epub_file_path, args.voice, args.pick, args.speed, None)
 
 
 if __name__ == '__main__':

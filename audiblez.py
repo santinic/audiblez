@@ -49,7 +49,7 @@ def main(pipeline, file_path, voice, pick_manually, speed, chapters_by_name):
     intro = f'{title} by {creator}'
     print(intro)
 
-    if chapter_by_name:
+    if chapters_by_name:
         chapters = []
         for chapter_by_name in chapters_by_name:
             for item in book.get_items():

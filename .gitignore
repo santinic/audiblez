@@ -1,9 +1,12 @@
 venv
 __pycache__
+.idea
+chapters.txt
+.DS_Store
+*.pyc
 *.wav
 *.mp3
-gene
-epub
+*.epub
 *.sh
 *.json
 *.onnx

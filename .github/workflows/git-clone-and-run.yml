@@ -1,0 +1,24 @@
+name: Git clone and run
+run-name: Git clone and run
+on: [ push, pull_request ]
+jobs:
+  git-clone-and-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: pip install poetry && poetry install
+      - name: check it runs as script
+        run: poetry run audiblez --help
+      - name: install ffmpeg
+        run: sudo apt-get install ffmpeg
+      - name: download test epub
+        run: wget https://github.com/daisy/epub-accessibility-tests/releases/download/fundamental-2.0/Fundamental-Accessibility-Tests-Basic-Functionality-v2.0.0.epub
+      - name: create audiobook
+        run: poetry run audiblez Fundamental-Accessibility-Tests-Basic-Functionality-v2.0.0.epub
+      - name: check m4b output file
+        run: ls -lah Fundamental-Accessibility-Tests-Basic-Functionality-v2.0.0.m4b

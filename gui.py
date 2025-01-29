@@ -3,7 +3,7 @@ from tkinter import filedialog, ttk, messagebox
 import sys
 import threading
 import io
-import onnxruntime as ort
+from kokoro import KPipeline
 import ebooklib
 from PIL import Image, ImageTk
 
@@ -20,16 +20,6 @@ class TextRedirector:
 
     def flush(self):
         pass
-
-
-def get_language_from_voice(voice):
-    if voice.startswith("a"):
-        return "en-us"
-    elif voice.startswith("b"):
-        return "en-gb"
-    else:
-        print("Voice not recognized.")
-        exit(1)
 
 
 LANGUAGE_TO_FLAG = {
@@ -90,18 +80,19 @@ def start_gui():
     speed_entry.bind('<KeyRelease>', check_speed_range)
 
     # add a combo box with ONNX providers
-    available_providers = ort.get_available_providers()
-    default_provider = [p for p in available_providers if "CPU" in p][0]
+    #available_providers = ort.get_available_providers()
+    #default_provider = [p for p in available_providers if "CPU" in p][0]
     providers_label = tk.Label(voice_frame, text="Select ONNX providers:", font=('Arial', 12))
     providers_label.pack(side=tk.LEFT, pady=5, padx=5)
 
     providers_combo = ttk.Combobox(
         voice_frame,
-        values=available_providers,
+        values=[],
         state="readonly",
         font=('Arial', 12)
     )
-    providers_combo.set(default_provider)  # Set default selection
+    providers_combo.configure(state='disabled')
+    #providers_combo.set(default_provider)  # Set default selection
     providers_combo.pack(side=tk.LEFT, pady=5, padx=5)
     
     # add a combo box with voice options
@@ -109,8 +100,8 @@ def start_gui():
     voice_label.pack(side=tk.LEFT, pady=5, padx=5)
 
     # add a combo box with voice options
-    from audiblez import get_voice_list
-    voices = [emojify_voice(x) for x in get_voice_list()]
+    from audiblez import voices
+    voices = [emojify_voice(x) for x in voices]
     voice_combo = ttk.Combobox(
         voice_frame,
         values=voices,
@@ -183,7 +174,8 @@ def start_gui():
         def run_conversion():
             try:
                 from audiblez import main
-                main(kokoro, file_path, language, voice, float(speed), [provider], chapters_by_name)
+                pipeline = KPipeline(lang_code=voice)
+                main(pipeline, file_path, voice, False, float(speed), chapters_by_name)
             finally:
                 # Ensure controls are re-enabled even if an error occurs
                 root.after(0, enable_controls)
@@ -195,8 +187,6 @@ def start_gui():
             messagebox.showwarning("Warning", warning)
 
         if file_label.cget("text"):
-            from audiblez import get_kokoro
-            kokoro = get_kokoro()        
             output_text.configure(state='normal')
             output_text.delete(1.0, tk.END)
             output_text.configure(state='disabled')
@@ -204,9 +194,7 @@ def start_gui():
             sys.stdout = TextRedirector(output_text)
             file_path = file_label.cget("text")
             voice = deemojify_voice(voice_combo.get())
-            provider = providers_combo.get()
             speed = speed_entry.get()
-            language = get_language_from_voice(voice)
             speed_entry.configure(state='disabled')
             providers_combo.configure(state='disabled')
             voice_combo.configure(state='disabled')

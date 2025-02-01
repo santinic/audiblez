@@ -3,7 +3,6 @@ from tkinter import filedialog, ttk, messagebox
 import sys
 import threading
 import io
-from kokoro import KPipeline
 import ebooklib
 from PIL import Image, ImageTk
 
@@ -170,9 +169,8 @@ def start_gui():
         def run_conversion():
             try:
                 from audiblez import main
-                pipeline = KPipeline(lang_code=voice[0])
                 chapters = [chapters_selected_listbox.get(i) for i in range(chapters_selected_listbox.size())]
-                main(pipeline, file_path, voice, False, float(speed), chapters)
+                main(file_path, voice, False, float(speed), chapters, None)
             finally:
                 # Ensure controls are re-enabled even if an error occurs
                 root.after(0, enable_controls)

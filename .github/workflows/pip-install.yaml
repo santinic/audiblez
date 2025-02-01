@@ -19,8 +19,8 @@ jobs:
         run: python -m audiblez --help
       - name: check it runs as script
         run: audiblez --help
-      - name: install ffmpeg
-        run: sudo apt-get install ffmpeg
+      - name: install ffmpeg and espeak-ng
+        run: sudo apt update && sudo apt-get install ffmpeg espeak-ng
       - name: download test epub
         run: wget https://github.com/daisy/epub-accessibility-tests/releases/download/fundamental-2.0/Fundamental-Accessibility-Tests-Basic-Functionality-v2.0.0.epub
       - name: create audiobook

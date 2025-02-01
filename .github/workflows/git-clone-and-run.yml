@@ -14,11 +14,13 @@ jobs:
         run: pip install poetry && poetry install
       - name: check it runs as script
         run: poetry run audiblez --help
-      - name: install ffmpeg
-        run: sudo apt-get install ffmpeg
+      - name: install ffmpeg and espeak-ng
+        run: sudo apt-get update && sudo apt-get install ffmpeg espeak-ng --fix-missing
       - name: download test epub
         run: wget https://github.com/daisy/epub-accessibility-tests/releases/download/fundamental-2.0/Fundamental-Accessibility-Tests-Basic-Functionality-v2.0.0.epub
       - name: create audiobook
         run: poetry run audiblez Fundamental-Accessibility-Tests-Basic-Functionality-v2.0.0.epub
       - name: check m4b output file
         run: ls -lah Fundamental-Accessibility-Tests-Basic-Functionality-v2.0.0.m4b
+#      - name: run unit-tests (unittest classes in /test)
+#        run:  poetry run python -m unittest discover test

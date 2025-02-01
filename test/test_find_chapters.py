@@ -1,13 +1,15 @@
 import unittest
 from ebooklib import epub
 
-from audiblez import find_chapters
+from audiblez import find_good_chapters, find_document_chapters_and_extract_texts
 
 
+@unittest.skip('Development only, not for CI')
 class FindChaptersTest(unittest.TestCase):
     def base(self, file, expected_chapter_names):
         book = epub.read_epub(file)
-        chapters = find_chapters(book)
+        document_chapters = find_document_chapters_and_extract_texts(book)
+        chapters = find_good_chapters(document_chapters)
         chapter_names = [c.get_name() for c in chapters]
         self.assertEqual(chapter_names, expected_chapter_names)
 
@@ -102,32 +104,32 @@ class FindChaptersTest(unittest.TestCase):
             # 'Text/03_Dedi.xhtml',  # 211
             # 'Text/04_Contents.xhtml',  # 6302
             # 'Text/06_Intro.xhtml',  # 34726
-            'Text/11_Part1.xhtml',  # 332
+            # 'Text/11_Part1.xhtml',  # 332
             'Text/12_Chapter01.xhtml',  # 33940
             'Text/12_Chapter02.xhtml',  # 47738
-            'Text/12_Chapter02_Part2.xhtml',  # 328
+            # 'Text/12_Chapter02_Part2.xhtml',  # 328
             'Text/12_Chapter03.xhtml',  # 42010
             'Text/12_Chapter04.xhtml',  # 42182
             'Text/12_Chapter05.xhtml',  # 51283
-            'Text/12_Chapter05_Part3.xhtml',  # 327
+            # 'Text/12_Chapter05_Part3.xhtml',  # 327
             'Text/12_Chapter06.xhtml',  # 46570
             'Text/12_Chapter07.xhtml',  # 48752
             'Text/12_Chapter08.xhtml',  # 52048
             'Text/12_Chapter09.xhtml',  # 35717
-            'Text/12_Chapter09_Part4.xhtml',  # 343
+            # 'Text/12_Chapter09_Part4.xhtml',  # 343
             'Text/12_Chapter10.xhtml',  # 43114
             'Text/12_Chapter11.xhtml',  # 53469
             'Text/12_Chapter12.xhtml',  # 29441
             'Text/12_Chapter13.xhtml',  # 34265
-            'Text/12_Chapter13_Part5.xhtml',  # 327
+            # 'Text/12_Chapter13_Part5.xhtml',  # 327
             'Text/12_Chapter14.xhtml',  # 42381
             'Text/12_Chapter15.xhtml',  # 43875
             'Text/12_Chapter16.xhtml',  # 28861
-            'Text/12_Chapter16_Part6.xhtml',  # 328
+            # 'Text/12_Chapter16_Part6.xhtml',  # 328
             'Text/12_Chapter17.xhtml',  # 45652
             'Text/12_Chapter18.xhtml',  # 43328
             'Text/12_Chapter19.xhtml',  # 34453
-            'Text/12_Chapter19_Part7.xhtml',  # 334
+            # 'Text/12_Chapter19_Part7.xhtml',  # 334
             'Text/12_Chapter20.xhtml',  # 40554
             'Text/12_Chapter21.xhtml',  # 30382
             'Text/12_Chapter22.xhtml',  # 57467

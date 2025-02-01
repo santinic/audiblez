@@ -259,7 +259,7 @@ def cli_main():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        cli_main(sys.argv)
-    else:
+    if len(sys.argv) > 1 and sys.argv[1] == '--gui':
         start_gui()
+    else:
+        cli_main(sys.argv)

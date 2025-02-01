@@ -58,7 +58,7 @@ def deemojify_voice(voice):
 def start_gui():
     root = tk.Tk()
     root.title('Audiblez')
-    root.geometry('900x900')
+    root.geometry('1200x900')
     root.resizable(False, False)
 
     voice_frame = tk.Frame(root)
@@ -157,19 +157,22 @@ def start_gui():
             for item in book.get_items():
                 if item.get_type() == ebooklib.ITEM_DOCUMENT:
                     chapters_by_name.append(item.get_name())
-                    chapters_listbox.insert(tk.END, item.get_name())
+            chapters_by_name.sort()
+            for chapter in chapters_by_name:
+                chapters_listbox.insert(tk.END, chapter)
+            
     
     def convert():
         def enable_controls():
             speed_entry.configure(state='normal')
-            providers_combo.configure(state='normal')
             voice_combo.configure(state='normal')
         
         def run_conversion():
             try:
                 from audiblez import main
-                pipeline = KPipeline(lang_code=voice)
-                main(pipeline, file_path, voice, False, float(speed), chapters_by_name)
+                pipeline = KPipeline(lang_code=voice[0])
+                chapters = [chapters_selected_listbox.get(i) for i in range(chapters_selected_listbox.size())]
+                main(pipeline, file_path, voice, False, float(speed), chapters)
             finally:
                 # Ensure controls are re-enabled even if an error occurs
                 root.after(0, enable_controls)
@@ -190,7 +193,6 @@ def start_gui():
             voice = deemojify_voice(voice_combo.get())
             speed = speed_entry.get()
             speed_entry.configure(state='disabled')
-            providers_combo.configure(state='disabled')
             voice_combo.configure(state='disabled')
             threading.Thread(target=run_conversion).start()
             # when this thread finishes, re-enable the buttons
@@ -245,7 +247,7 @@ def start_gui():
         selectmode=tk.MULTIPLE,
         yscrollcommand=scrollbar.set,
         font=('Arial', 12),
-        width=40,
+        width=60,
         height=10
     )
     chapters_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -306,7 +308,7 @@ def start_gui():
         selectmode=tk.MULTIPLE,
         yscrollcommand=scrollbar_selected.set,
         font=('Arial', 12),
-        width=40,
+        width=60,
         height=10
     )
     chapters_selected_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)

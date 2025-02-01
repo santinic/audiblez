@@ -53,39 +53,6 @@ available voices are `af`, `af_bella`, `af_nicole`, `af_sarah`, `af_sky`, `am_ad
 You can try them here: [https://huggingface.co/spaces/hexgrad/Kokoro-TTS](https://huggingface.co/spaces/hexgrad/Kokoro-TTS)
 
 
-## How to run on GPU
-By default audiblez runs on CPU. If you want to use a GPU for faster performance, install the GPU-enabled ONNX Runtime and specify a runtime provider with the `--providers` flag. By default, the CPU-enabled ONNX Runtime is installed. The GPU runtime must be installed manually.
-
-```bash
-pip install onnxruntime-gpu
-```
-
-To specify ONNX providers, such as using an NVIDIA GPU, use the `--providers` tag. For example:
-
-```bash
-audiblez book.epub -l en-gb -v af_sky --providers CUDAExecutionProvider
-```
-
-To see the list of available providers on your system, run the following:
-
-```bash
-audiblez --help
-```
-
-or
-
-```bash
-python -c "import onnxruntime as ort; print(ort.get_available_providers())"
-```
-
-This will display the ONNX providers that can be used, such as `CUDAExecutionProvider` for NVIDIA GPUs or `CPUExecutionProvider` for CPU-only execution.
-
-You can specify a provider hierarchy by providing multiple hierarchies separated by spaces.
-
-```bash
-audiblez book.epub -l en-gb -v af_sky --providers CUDAExecutionProvider CPUExecutionProvider
-```
-
 ## Author
 by [Claudio Santini](https://claudio.uk) in 2025, distributed under MIT licence.
 

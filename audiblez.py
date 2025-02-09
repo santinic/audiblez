@@ -251,7 +251,7 @@ def create_m4b(chapter_files, filename, cover_image):
         '-c', 'copy',
         '-f', 'mp4',
         f'{final_filename}'
-    ])
+    ], check=False)
     Path(tmp_filename).unlink()
     if proc.returncode == 0:
         print(f'{final_filename} created. Enjoy your audiobook.')

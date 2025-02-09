@@ -14,7 +14,7 @@ using Kokoro's high-quality speech synthesis.
 It's released under Apache licence and it was trained on < 100 hours of audio.
 It currently supports these languages: 🇺🇸 🇬🇧 🇪🇸 🇫🇷 🇮🇳 🇮🇹 🇯🇵 🇧🇷 🇨🇳
 
-On a Google Colab's T4 GPU via Cuda, **it takes about 5 minutes to convert "Animal's Farm" by Orwell** (which is about 160,000 characters) to audiobook, at a rate of about 600 characters per second.
+On a Google Colab's T4 GPU via Cuda, **it takes about 5 minutes to convert "Animal Farm" by Orwell** (which is about 160,000 characters) to audiobook, at a rate of about 600 characters per second.
 
 On my M2 MacBook Pro, on CPU, it takes about 1 hour, at a rate of about 60 characters per second.
 
@@ -71,7 +71,7 @@ The first letter is the language code and the second is the gender of the speake
 
 By default, audiblez runs on CPU. If you pass the option `--cuda` it will try to use the Cuda device via Torch.
 
-Check out this example: [Audiblez running on a Google Colab Notebook with Cuda ](https://colab.research.google.com/drive/164PQLowogprWQpRjKk33e-8IORAvqXKI?usp=sharing]).
+Check out this example: [Audiblez running on a Google Colab Notebook with Cuda](https://colab.research.google.com/drive/164PQLowogprWQpRjKk33e-8IORAvqXKI?usp=sharing]).
 
 We don't currently support Apple Silicon, as there is not yet a Kokoro implementation in MLX. As soon as it will be available, we will support it.
 

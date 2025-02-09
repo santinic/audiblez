@@ -268,12 +268,12 @@ def create_index_file(title, creator, chapter_mp3_files):
     with open("chapters.txt", "w") as f:
         f.write(f";FFMETADATA1\ntitle={title}\nartist={creator}\n\n")
         start = 0
-        i = 0
-        for c in chapter_mp3_files:
+        
+        for i, c in enumerate(chapter_mp3_files):
             duration = probe_duration(c)
             end = start + (int)(duration * 1000)
             f.write(f"[CHAPTER]\nTIMEBASE=1/1000\nSTART={start}\nEND={end}\ntitle=Chapter {i}\n\n")
-            i += 1
+            
             start = end
 
 

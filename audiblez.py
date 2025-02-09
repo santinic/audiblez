@@ -145,7 +145,7 @@ def gen_audio_segments(pipeline, text, voice, speed):
     doc = nlp(text)
     sentences = list(doc.sents)
     for sent in sentences:
-        for gs, ps, audio in pipeline(sent.text, voice=voice, speed=speed, split_pattern=r'\n\n\n'):
+        for _gs, _ps, audio in pipeline(sent.text, voice=voice, speed=speed, split_pattern=r'\n\n\n'):
             audio_segments.append(audio)
     return audio_segments
 

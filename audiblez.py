@@ -232,8 +232,8 @@ def create_m4b(chapter_files, filename, cover_image):
     print('Creating M4B file...')
 
     if cover_image:
-        cover_image_file = NamedTemporaryFile("wb", delete=False)
-        cover_image_file.write(cover_image)
+        with NamedTemporaryFile("wb", delete=False) as cover_image_file:
+            cover_image_file.write(cover_image)
         cover_image_args = ["-i", cover_image_file.name, "-map", "0:a", "-map", "2:v"]
     else:
         cover_image_args = []

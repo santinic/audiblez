@@ -2,27 +2,28 @@
 # audiblez - A program to convert e-books into audiobooks using
 # Kokoro-82M model for high-quality text-to-speech synthesis.
 # by Claudio Santini 2025 - https://claudio.uk
-import torch
-import spacy
-import ebooklib
-import soundfile
-import numpy as np
 import argparse
-import sys
-import time
+import re
 import shutil
 import subprocess
-import re
-from tabulate import tabulate
+import sys
+import time
 from pathlib import Path
 from string import Formatter
-from yaspin import yaspin
-from bs4 import BeautifulSoup
-from kokoro import KPipeline
-from ebooklib import epub
-from pydub import AudioSegment
-from pick import pick
 from tempfile import NamedTemporaryFile
+
+import ebooklib
+import numpy as np
+import soundfile
+import spacy
+import torch
+from bs4 import BeautifulSoup
+from ebooklib import epub
+from kokoro import KPipeline
+from pick import pick
+from pydub import AudioSegment
+from tabulate import tabulate
+from yaspin import yaspin
 
 sample_rate = 24000
 

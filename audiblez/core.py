@@ -18,6 +18,7 @@ import subprocess
 import platform
 import re
 from io import StringIO
+from markdown import Markdown
 from types import SimpleNamespace
 from tabulate import tabulate
 from pathlib import Path

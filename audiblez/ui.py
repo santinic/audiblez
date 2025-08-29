@@ -321,7 +321,7 @@ class MainWindow(wx.Frame):
         sizer.Add(output_folder_button, pos=(4, 1), flag=wx.ALL, border=border)
 
     def create_synthesis_panel(self):
-        # Think and identify layout issue with the folling code
+        # Think and identify layout issue with the following code
         panel_box = wx.Panel(self.right_panel, style=wx.SUNKEN_BORDER)
         panel_box_sizer = wx.StaticBoxSizer(wx.VERTICAL, panel_box, "Audiobook Generation Status")
         panel_box.SetSizer(panel_box_sizer)

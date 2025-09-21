@@ -15,15 +15,15 @@ dependencies = [
     "spacy (>=3.8.3,<4.0.0)",
     "kokoro (>=0.7.9,<0.8.0)",
     "misaki[zh] (>=0.7.10,<0.8.0)",
-    "tabulate (>=0.9.0,<0.10.0)",
+    "tabulate (>=0.9.0,<0.10.0)"
 ]
-exclude = [
-    "imgs",
-    "test",
-    "*.wav",
-    "*.m4b",
-    "cover",
-    "chapters.txt"
+
+# Optional GUI dependencies for the UI entrypoint.
+[project.optional-dependencies]
+ui = [
+    # Wheels exist for macOS/Py3.12; keep platform marker so Linux headless users aren't forced to build it.
+    "wxPython>=4.2.2; sys_platform == 'darwin'",
+    "pillow>=10.0.0"
 ]
 
 [build-system]
@@ -39,6 +39,17 @@ Issues = "https://github.com/santinic/audiblez/issues"
 [project.scripts]
 audiblez = "audiblez.cli:cli_main"
 audiblez-ui = "audiblez.ui:main"
+
+[tool.poetry]
+# Preserve the author's original file excludes (moved here from [project]).
+exclude = [
+    "imgs",
+    "test",
+    "*.wav",
+    "*.m4b",
+    "cover",
+    "chapters.txt"
+]
 
 [tool.poetry.group.dev.dependencies]
 deptry = "^0.23.0"

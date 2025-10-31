@@ -293,28 +293,58 @@ def strfdelta(tdelta, fmt='{D:02}d {H:02}h {M:02}m {S:02}s'):
 
 
 def concat_wavs_with_ffmpeg(chapter_files, output_folder, filename):
+    """
+    Concatenates all chapter WAV files into a single AAC M4A file.
+    Prints the full ffmpeg command for debugging.
+    """
     wav_list_txt = Path(output_folder) / filename.replace('.epub', '_wav_list.txt')
     with open(wav_list_txt, 'w') as f:
         for wav_file in chapter_files:
             f.write(f"file '{wav_file}'\n")
-    concat_file_path = Path(output_folder) / filename.replace('.epub', '.tmp.mp4')
-    subprocess.run(['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', wav_list_txt, '-c', 'copy', concat_file_path])
-    Path(wav_list_txt).unlink()
+
+    concat_file_path = Path(output_folder) / filename.replace('.epub', '.tmp.m4a')
+
+    # Build FFmpeg command
+    cmd = [
+        'ffmpeg', '-y',
+        '-f', 'concat', 
+        '-safe', '0',
+        '-i', str(wav_list_txt),
+        '-c:a', 'aac', # Encode to AAC (compatible with m4a/m4b)
+        '-b:a', '64k', # Reasonable quality/size tradeoff
+        str(concat_file_path)
+    ]
+
+    # Print full command for debugging
+    print("\nFFmpeg concat command:")
+    print(" ".join(cmd))
+    print()
+
+    # Run command and raise if error
+    subprocess.run(cmd, check=True)
+
+    wav_list_txt.unlink(missing_ok=True)
     return concat_file_path
 
 
 def create_m4b(chapter_files, filename, cover_image, output_folder):
+    """
+    Takes concatenated AAC M4A file and creates a final M4B file,
+    embedding chapters and optional cover art.
+    Prints full ffmpeg command for debugging.
+    """
     concat_file_path = concat_wavs_with_ffmpeg(chapter_files, output_folder, filename)
     final_filename = Path(output_folder) / filename.replace('.epub', '.m4b')
     chapters_txt_path = Path(output_folder) / "chapters.txt"
     print('Creating M4B file...')
 
+    # Handle cover art if available
     if cover_image:
         cover_file_path = Path(output_folder) / 'cover'
         with open(cover_file_path, 'wb') as f:
             f.write(cover_image)
         cover_image_args = [
-            '-i', f'{cover_file_path}',
+            '-i', str(cover_file_path),
             '-map', '2:v',  # Map cover image
             '-disposition:v', 'attached_pic',  # Ensure cover is embedded
             '-c:v', 'copy',  # Keep cover unchanged
@@ -322,28 +352,35 @@ def create_m4b(chapter_files, filename, cover_image, output_folder):
     else:
         cover_image_args = []
 
-    proc = subprocess.run([
+    # Build FFmpeg command
+    cmd = [
         'ffmpeg',
         '-y',  # Overwrite output
-        
-        '-i', f'{concat_file_path}',  # Input audio
-        '-i', f'{chapters_txt_path}',  # Input chapters
+        '-i', str(concat_file_path),  # Input audio
+        '-i', str(chapters_txt_path),  # Input chapters
         *cover_image_args,  # Cover image (if provided)
-
         '-map', '0:a',  # Map audio
-        '-c:a', 'aac',  # Convert to AAC
-        '-b:a', '64k',  # Reduce bitrate for smaller size
+        '-c:a', 'copy', # Audio already AAC from concat stage
+        '-map_metadata', '1',
+        '-f', 'mp4',           # M4B is MP4 container
+        str(final_filename)
+    ]
 
-        '-map_metadata', '1', # Map metadata
+    # Print full command for debugging
+    print("\nFFmpeg M4B creation command:")
+    print(" ".join(cmd))
+    print()
 
-        '-f', 'mp4',  # Output as M4B
-        f'{final_filename}'  # Output file
-    ])
+    # Run FFmpeg
+    proc = subprocess.run(cmd)
 
-    Path(concat_file_path).unlink()
+    concat_file_path.unlink(missing_ok=True)
+
     if proc.returncode == 0:
         print(f'{final_filename} created. Enjoy your audiobook.')
         print('Feel free to delete the intermediary .wav chapter files, the .m4b is all you need.')
+    else:
+        print('Error creating M4B file.')
 
 
 def probe_duration(file_name):

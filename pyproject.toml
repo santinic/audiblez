@@ -16,6 +16,7 @@ dependencies = [
     "kokoro (>=0.7.9,<0.8.0)",
     "misaki[zh] (>=0.7.10,<0.8.0)",
     "tabulate (>=0.9.0,<0.10.0)",
+    "tqdm (>=4.67.1,<5.0.0)",
 ]
 exclude = [
     "imgs",

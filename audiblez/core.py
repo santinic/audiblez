@@ -26,6 +26,7 @@ from bs4 import BeautifulSoup
 from kokoro import KPipeline
 from ebooklib import epub
 from pick import pick
+from tqdm import tqdm
 
 sample_rate = 24000
 
@@ -116,6 +117,10 @@ def main(file_path, voice, pick_manually, speed, output_folder='.',
     set_espeak_library()
     pipeline = KPipeline(lang_code=voice[0])  # a for american or b for british etc.
 
+    # Create single progress bar for all chapters
+    pbar = tqdm(total=stats.total_chars, unit='chars', unit_scale=True,
+                desc="Processing", disable=stats is None) if stats else None
+
     chapter_wav_files = []
     for i, chapter in enumerate(selected_chapters, start=1):
         if max_chapters and i > max_chapters: break
@@ -139,7 +144,7 @@ def main(file_path, voice, pick_manually, speed, output_folder='.',
         start_time = time.time()
         if post_event: post_event('CORE_CHAPTER_STARTED', chapter_index=chapter.chapter_index)
         audio_segments = gen_audio_segments(
-            pipeline, text, voice, speed, stats, post_event=post_event, max_sentences=max_sentences)
+            pipeline, text, voice, speed, stats, post_event=post_event, max_sentences=max_sentences, pbar=pbar)
         if audio_segments:
             final_audio = np.concatenate(audio_segments)
             soundfile.write(chapter_wav_path, final_audio, sample_rate)
@@ -152,6 +157,10 @@ def main(file_path, voice, pick_manually, speed, output_folder='.',
         else:
             print(f'Warning: No audio generated for chapter {i}')
             chapter_wav_files.remove(chapter_wav_path)
+
+    # Close progress bar after all chapters are processed
+    if pbar:
+        pbar.close()
 
     if has_ffmpeg:
         create_index_file(title, creator, chapter_wav_files, output_folder)
@@ -190,7 +199,7 @@ def print_selected_chapters(document_chapters, chapters):
     ], headers=['#', 'Chapter', 'Text Length', 'Selected', 'First words']))
 
 
-def gen_audio_segments(pipeline, text, voice, speed, stats=None, max_sentences=None, post_event=None):
+def gen_audio_segments(pipeline, text, voice, speed, stats=None, max_sentences=None, post_event=None, pbar=None):
     nlp = spacy.load('xx_ent_wiki_sm')
     nlp.add_pipe('sentencizer')
     audio_segments = []
@@ -201,12 +210,13 @@ def gen_audio_segments(pipeline, text, voice, speed, stats=None, max_sentences=N
         for gs, ps, audio in pipeline(sent.text, voice=voice, speed=speed, split_pattern=r'\n\n\n'):
             audio_segments.append(audio)
         if stats:
-            stats.processed_chars += len(sent.text)
+            chars_processed = len(sent.text)
+            stats.processed_chars += chars_processed
             stats.progress = stats.processed_chars * 100 // stats.total_chars
             stats.eta = strfdelta((stats.total_chars - stats.processed_chars) / stats.chars_per_sec)
             if post_event: post_event('CORE_PROGRESS', stats=stats)
-            print(f'Estimated time remaining: {stats.eta}')
-            print('Progress:', f'{stats.progress}%\n')
+            if pbar:
+                pbar.update(chars_processed)
     return audio_segments
 
 

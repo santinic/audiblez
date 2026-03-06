@@ -24,11 +24,12 @@ from pathlib import Path
 from string import Formatter
 from bs4 import BeautifulSoup
 from kokoro import KPipeline
+from mlx_audio.tts.models.kokoro import KokoroPipeline as MLX_KPipeline
+from mlx_audio.tts.utils import load_model
 from ebooklib import epub
 from pick import pick
 
 sample_rate = 24000
-
 
 def load_spacy():
     if not spacy.util.is_package("xx_ent_wiki_sm"):
@@ -70,7 +71,7 @@ def set_espeak_library():
 
 
 def main(file_path, voice, pick_manually, speed, output_folder='.',
-         max_chapters=None, max_sentences=None, selected_chapters=None, post_event=None):
+         max_chapters=None, max_sentences=None, selected_chapters=None, post_event=None, use_mlx=False):
     if post_event: post_event('CORE_STARTED')
     load_spacy()
     if output_folder != '.':
@@ -115,6 +116,11 @@ def main(file_path, voice, pick_manually, speed, output_folder='.',
     print(f'Estimated time remaining (assuming {stats.chars_per_sec} chars/sec): {eta}')
     set_espeak_library()
     pipeline = KPipeline(lang_code=voice[0])  # a for american or b for british etc.
+    if use_mlx:
+        print("Using MLX Pipeline")
+        model_id = 'prince-canuma/Kokoro-82M'
+        model = load_model(model_id)
+        pipeline = MLX_KPipeline(lang_code=voice[0], model=model, repo_id=model_id)
 
     chapter_wav_files = []
     for i, chapter in enumerate(selected_chapters, start=1):
@@ -141,7 +147,8 @@ def main(file_path, voice, pick_manually, speed, output_folder='.',
         audio_segments = gen_audio_segments(
             pipeline, text, voice, speed, stats, post_event=post_event, max_sentences=max_sentences)
         if audio_segments:
-            final_audio = np.concatenate(audio_segments)
+            flattened_segments = [seg.squeeze() for seg in audio_segments]  # Remove singleton dimensions
+            final_audio = np.concatenate(flattened_segments)
             soundfile.write(chapter_wav_path, final_audio, sample_rate)
             end_time = time.time()
             delta_seconds = end_time - start_time

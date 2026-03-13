@@ -1,4 +1,4 @@
-# Audiblez: Generate  audiobooks from e-books
+# Audiblez: Generate  audiobooks from e-books e muito mais
 
 [![Installing via pip and running](https://github.com/santinic/audiblez/actions/workflows/pip-install.yaml/badge.svg)](https://github.com/santinic/audiblez/actions/workflows/pip-install.yaml)
 [![Git clone and run](https://github.com/santinic/audiblez/actions/workflows/git-clone-and-run.yml/badge.svg)](https://github.com/santinic/audiblez/actions/workflows/git-clone-and-run.yml)

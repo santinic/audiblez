@@ -251,7 +251,13 @@ def gen_text(text, voice='af_heart', output_file='text.wav', speed=1, play=False
 
 
 def find_document_chapters_and_extract_texts(book):
-    """Returns every chapter that is an ITEM_DOCUMENT and enriches each chapter with extracted_text."""
+    """Returns every chapter that is an ITEM_DOCUMENT and enriches each chapter with extracted_text.
+
+    Skips any matched tag whose ancestor is also a matched tag, otherwise nested
+    structures like <li><p>text</p></li> get extracted twice (once via <li>.text
+    walking into the <p>, once via <p>.text directly), causing repeated content
+    in the audio output.
+    """
     document_chapters = []
     for chapter in book.get_items():
         if chapter.get_type() != ebooklib.ITEM_DOCUMENT:
@@ -260,7 +266,14 @@ def find_document_chapters_and_extract_texts(book):
         soup = BeautifulSoup(xml, features='lxml')
         chapter.extracted_text = ''
         html_content_tags = ['title', 'p', 'h1', 'h2', 'h3', 'h4', 'li']
-        for text in [c.text.strip() for c in soup.find_all(html_content_tags) if c.text]:
+        all_matched = soup.find_all(html_content_tags)
+        matched_ids = {id(t) for t in all_matched}
+        for tag in all_matched:
+            if any(id(p) in matched_ids for p in tag.parents):
+                continue  # ancestor will emit this text already
+            text = tag.text.strip() if tag.text else ''
+            if not text:
+                continue
             if not text.endswith('.'):
                 text += '.'
             chapter.extracted_text += text + '\n'
@@ -289,10 +302,19 @@ def chapter_beginning_one_liner(c, chars=20):
 
 
 def find_good_chapters(document_chapters):
-    chapters = [c for c in document_chapters if c.get_type() == ebooklib.ITEM_DOCUMENT and is_chapter(c)]
-    if len(chapters) == 0:
-        print('Not easy to recognize the chapters, defaulting to all non-empty documents.')
-        chapters = [c for c in document_chapters if c.get_type() == ebooklib.ITEM_DOCUMENT and len(c.extracted_text) > 10]
+    docs_with_text = [c for c in document_chapters
+                      if c.get_type() == ebooklib.ITEM_DOCUMENT and len(c.extracted_text) > 10]
+    chapters = [c for c in docs_with_text if is_chapter(c)]
+    # The is_chapter() heuristic searches for substrings like "ch\d" anywhere in
+    # the filename. In Kindle-converted EPUBs many docs are named "c0.xhtml",
+    # "cH7.xhtml" etc., where the lowercase "ch7" can accidentally satisfy the
+    # regex even though the file is just one of many flat content docs. Require
+    # at least 3 matches before trusting the pattern, otherwise treat all
+    # non-empty docs as chapters.
+    if len(chapters) < 3:
+        print(f'Only {len(chapters)} doc(s) matched the chapter-name pattern '
+              f'(of {len(docs_with_text)} non-empty docs); defaulting to all of them.')
+        return docs_with_text
     return chapters
 
 

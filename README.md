@@ -109,11 +109,33 @@ For more detaila about voice quality, check this document: [Kokoro-82M voices](h
 
 ## How to run on GPU
 
-By default, audiblez runs on CPU. If you pass the option `--cuda` it will try to use the Cuda device via Torch.
+Use `--device` to pick the compute backend:
 
-Check out this example: [Audiblez running on a Google Colab Notebook with Cuda ](https://colab.research.google.com/drive/164PQLowogprWQpRjKk33e-8IORAvqXKI?usp=sharing]).
+```
+audiblez book.epub --device auto   # default: MPS on Apple Silicon, else CUDA, else CPU
+audiblez book.epub --device mps    # Apple Silicon Metal GPU (M-series)
+audiblez book.epub --device cuda   # NVIDIA GPU
+audiblez book.epub --device cpu    # force CPU
+```
 
-We don't currently support Apple Silicon, as there is not yet a Kokoro implementation in MLX. As soon as it will be available, we will support it.
+`--cuda` is kept as a deprecated alias for `--device cuda`.
+
+### Apple Silicon (Metal / MPS)
+
+Audiblez runs the Kokoro model on Apple's Metal GPU via PyTorch's MPS backend. On an M-series chip MPS is roughly 25–35% faster than CPU on real-world EPUBs at steady state (e.g. ~228 vs ~170 chars/sec on representative English prose). MPS also tends to use less power than CPU for the same work.
+
+Four implementation details make MPS work well:
+
+- **Model on MPS only.** The model is moved with `.to('mps')`; we deliberately don't call `torch.set_default_device('mps')`, since that drags unrelated tensors (tokenizer state, numpy bridges) onto the GPU and causes constant CPU↔GPU transfers that actually make MPS *slower* than CPU.
+- **Conv1d vocoder.** The vocoder is built with `disable_complex=True`, which swaps Kokoro's `torch.stft`-based STFT for its built-in conv1d implementation (`CustomSTFT`). PyTorch's complex-tensor path on MPS is significantly slower than the real-valued conv path.
+- **Sentence batching.** Adjacent sentences are batched into ~1200-character chunks before being handed to Kokoro, well past Kokoro's 510-phoneme internal split point. This amortizes the fixed per-call overhead (kernel launch, tensor allocation) and lets Kokoro pick its own optimal split boundaries internally. This alone produced ~30% speedup on **both** CPU and MPS.
+- **fp32 weights.** Half-precision (bf16/fp16) is exposed via `--precision` but **not recommended on MPS** as of PyTorch 2.12: whole-model bf16/fp16 crashes in `MPSNDArrayMatrixMultiplication` (accumulator/destination dtype mismatch), and the autocast workaround introduces enough dtype-boundary overhead that it's slower than fp32 in practice. The flag is still useful for CUDA users.
+
+The first MPS run takes a few extra seconds while Metal compiles its shader cache; subsequent runs are fast.
+
+### CUDA
+
+Check out this example: [Audiblez running on a Google Colab Notebook with CUDA](https://colab.research.google.com/drive/164PQLowogprWQpRjKk33e-8IORAvqXKI?usp=sharing]).
 
 ## Manually pick chapters to convert
 
@@ -126,7 +148,8 @@ To do so, you can use `--pick` to interactively choose the chapters to convert (
 For all the options available, you can check the help page `audiblez --help`:
 
 ```
-usage: audiblez [-h] [-v VOICE] [-p] [-s SPEED] [-c] [-o FOLDER] epub_file_path
+usage: audiblez [-h] [-v VOICE] [-p] [-s SPEED] [-d {auto,cpu,cuda,mps}]
+                [--precision {fp32,bf16,fp16}] [-c] [-o FOLDER] epub_file_path
 
 positional arguments:
   epub_file_path        Path to the epub file
@@ -138,7 +161,12 @@ options:
   -p, --pick            Interactively select which chapters to read in the audiobook
   -s SPEED, --speed SPEED
                         Set speed from 0.5 to 2.0
-  -c, --cuda            Use GPU via Cuda in Torch if available
+  -d {auto,cpu,cuda,mps}, --device {auto,cpu,cuda,mps}
+                        Compute device: auto (default), cpu, cuda (NVIDIA), or mps (Apple Metal)
+  --precision {fp32,bf16,fp16}
+                        Model precision: fp32 (default), bf16, fp16. Half precision currently crashes on MPS;
+                        useful on CUDA.
+  -c, --cuda            Deprecated; equivalent to --device cuda
   -o FOLDER, --output FOLDER
                         Output folder for the audiobook and temporary files
 

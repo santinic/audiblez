@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # A simple wxWidgets UI for audiblez
 
-import torch.cuda
+import torch
 import numpy as np
 import soundfile
 import threading
@@ -273,19 +273,66 @@ class MainWindow(wx.Frame):
         engine_radio_panel = wx.Panel(panel)
         cpu_radio = wx.RadioButton(engine_radio_panel, label="CPU", style=wx.RB_GROUP)
         cuda_radio = wx.RadioButton(engine_radio_panel, label="CUDA")
-        if torch.cuda.is_available():
+        mps_radio = wx.RadioButton(engine_radio_panel, label="Metal (MPS)")
+
+        cuda_available = torch.cuda.is_available()
+        mps_available = torch.backends.mps.is_available()
+
+        # Default: MPS on Apple Silicon, else CUDA, else CPU.
+        if mps_available:
+            mps_radio.SetValue(True)
+            self.selected_device = 'mps'
+        elif cuda_available:
             cuda_radio.SetValue(True)
+            self.selected_device = 'cuda'
         else:
             cpu_radio.SetValue(True)
-            # cuda_radio.Disable()
+            self.selected_device = 'cpu'
+
+        if not cuda_available:
+            cuda_radio.Disable()
+        if not mps_available:
+            mps_radio.Disable()
+
         sizer.Add(engine_label, pos=(0, 0), flag=wx.ALL, border=border)
         sizer.Add(engine_radio_panel, pos=(0, 1), flag=wx.ALL, border=border)
         engine_radio_panel_sizer = wx.BoxSizer(wx.HORIZONTAL)
         engine_radio_panel.SetSizer(engine_radio_panel_sizer)
         engine_radio_panel_sizer.Add(cpu_radio, 0, wx.ALL, 5)
         engine_radio_panel_sizer.Add(cuda_radio, 0, wx.ALL, 5)
-        cpu_radio.Bind(wx.EVT_RADIOBUTTON, lambda event: torch.set_default_device('cpu'))
-        cuda_radio.Bind(wx.EVT_RADIOBUTTON, lambda event: torch.set_default_device('cuda'))
+        engine_radio_panel_sizer.Add(mps_radio, 0, wx.ALL, 5)
+
+        def set_device(name):
+            self.selected_device = name
+
+        cpu_radio.Bind(wx.EVT_RADIOBUTTON, lambda event: set_device('cpu'))
+        cuda_radio.Bind(wx.EVT_RADIOBUTTON, lambda event: set_device('cuda'))
+        mps_radio.Bind(wx.EVT_RADIOBUTTON, lambda event: set_device('mps'))
+
+        # Precision selector (separator + 3 radios on the same row).
+        engine_radio_panel_sizer.Add(wx.StaticText(engine_radio_panel, label="  Precision:"),
+                                     0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
+        fp32_radio = wx.RadioButton(engine_radio_panel, label="fp32", style=wx.RB_GROUP)
+        bf16_radio = wx.RadioButton(engine_radio_panel, label="bf16")
+        fp16_radio = wx.RadioButton(engine_radio_panel, label="fp16")
+        fp32_radio.SetValue(True)
+        self.selected_precision = 'fp32'
+
+        # Half precision only meaningful on GPU.
+        if not (cuda_available or mps_available):
+            bf16_radio.Disable()
+            fp16_radio.Disable()
+
+        engine_radio_panel_sizer.Add(fp32_radio, 0, wx.ALL, 5)
+        engine_radio_panel_sizer.Add(bf16_radio, 0, wx.ALL, 5)
+        engine_radio_panel_sizer.Add(fp16_radio, 0, wx.ALL, 5)
+
+        def set_precision(name):
+            self.selected_precision = name
+
+        fp32_radio.Bind(wx.EVT_RADIOBUTTON, lambda event: set_precision('fp32'))
+        bf16_radio.Bind(wx.EVT_RADIOBUTTON, lambda event: set_precision('bf16'))
+        fp16_radio.Bind(wx.EVT_RADIOBUTTON, lambda event: set_precision('fp16'))
 
         # Create a list of voices with flags
         flag_and_voice_list = []
@@ -484,8 +531,8 @@ class MainWindow(wx.Frame):
 
         def generate_preview():
             import audiblez.core as core
-            from kokoro import KPipeline
-            pipeline = KPipeline(lang_code=lang_code)
+            device = core.set_device(self.selected_device)
+            pipeline = core.build_pipeline(lang_code, device, precision=self.selected_precision)
             core.load_spacy()
             text = self.selected_chapter.extracted_text[:300]
             if len(text) == 0: return
@@ -530,7 +577,9 @@ class MainWindow(wx.Frame):
         self.core_thread = CoreThread(params=dict(
             file_path=file_path, voice=voice, pick_manually=False, speed=speed,
             output_folder=self.output_folder_text_ctrl.GetValue(),
-            selected_chapters=selected_chapters))
+            selected_chapters=selected_chapters,
+            device=self.selected_device,
+            precision=self.selected_precision))
         self.core_thread.start()
 
     def on_open(self, event):
@@ -571,7 +620,7 @@ class CoreThread(threading.Thread):
         self.params = params
 
     def run(self):
-        import core
+        import audiblez.core as core
         core.main(**self.params, post_event=self.post_event)
 
     def post_event(self, event_name, **kwargs):

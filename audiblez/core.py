@@ -7,7 +7,7 @@ import os
 import traceback
 from glob import glob
 
-import torch.cuda
+import torch
 import spacy
 import ebooklib
 import soundfile
@@ -24,10 +24,102 @@ from pathlib import Path
 from string import Formatter
 from bs4 import BeautifulSoup
 from kokoro import KPipeline
+from kokoro.model import KModel
 from ebooklib import epub
 from pick import pick
 
 sample_rate = 24000
+
+
+def pick_device(preference='auto'):
+    """Return the best available torch device name for the given preference.
+
+    preference: 'auto' | 'cpu' | 'cuda' | 'mps'
+    """
+    pref = (preference or 'auto').lower()
+    if pref == 'cpu':
+        return 'cpu'
+    if pref == 'cuda':
+        return 'cuda' if torch.cuda.is_available() else 'cpu'
+    if pref == 'mps':
+        return 'mps' if torch.backends.mps.is_available() else 'cpu'
+    if torch.backends.mps.is_available():
+        return 'mps'
+    if torch.cuda.is_available():
+        return 'cuda'
+    return 'cpu'
+
+
+def set_device(preference='auto'):
+    """Resolve device preference, return device name.
+
+    Note: we deliberately do NOT call torch.set_default_device() — doing so
+    forces unrelated tensors (tokenizer, numpy bridges, etc.) onto the GPU and
+    triggers constant CPU<->GPU ping-pong that made MPS ~2x slower than CPU.
+    The model is moved with .to(device) when the pipeline is built instead.
+    """
+    device = pick_device(preference)
+    if device == 'mps':
+        # Defensive: if any op lacks an MPS kernel, fall back to CPU per-op
+        # rather than failing. With disable_complex=True we don't expect any
+        # fallbacks, but the env var costs nothing if unused.
+        os.environ.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
+    return device
+
+
+def chars_per_sec_estimate(device):
+    if device == 'cuda':
+        return 500
+    if device == 'mps':
+        return 180  # measured on M-series with disable_complex CustomSTFT
+    return 50
+
+
+_PRECISION_DTYPES = {
+    'fp32': torch.float32,
+    'bf16': torch.bfloat16,
+    'fp16': torch.float16,
+}
+
+
+def build_pipeline(lang_code, device, precision='fp32'):
+    """Construct a Kokoro KPipeline configured for the given device + precision.
+
+    On MPS we build KModel with disable_complex=True so the vocoder uses
+    Kokoro's conv1d-based CustomSTFT instead of torch.stft. The complex-tensor
+    STFT path on MPS is significantly slower (and emits resize warnings on
+    every call); CustomSTFT avoids both.
+
+    precision: 'fp32' (default, safest), 'bf16', or 'fp16'.
+      - bf16 keeps fp32's dynamic range with half the bandwidth — generally
+        the safest 16-bit option on MPS.
+      - fp16 has historically hit a Metal driver assertion
+        (MPSNDArrayMatrixMultiplication accumulator dtype). Use at your own
+        risk; may crash the process on some torch versions.
+      - On CPU, half-precision math is usually slower than fp32 — precision
+        is only applied when device is 'mps' or 'cuda'.
+    """
+    repo_id = 'hexgrad/Kokoro-82M'
+    if precision not in _PRECISION_DTYPES:
+        raise ValueError(f"Unknown precision {precision!r}; expected one of {list(_PRECISION_DTYPES)}")
+
+    if device == 'mps':
+        model = KModel(repo_id=repo_id, disable_complex=True).to(device).eval()
+        pipeline = KPipeline(lang_code=lang_code, repo_id=repo_id, model=model)
+    else:
+        pipeline = KPipeline(lang_code=lang_code, repo_id=repo_id, device=device)
+
+    if precision != 'fp32' and device in ('mps', 'cuda'):
+        dtype = _PRECISION_DTYPES[precision]
+        pipeline.model = pipeline.model.to(dtype=dtype)
+        # Voice tensors are loaded from .pt files in fp32; cast them at load
+        # time so they match the model's dtype during forward().
+        _orig_load_voice = pipeline.load_voice
+        def _load_voice_cast(voice, *args, **kwargs):
+            return _orig_load_voice(voice, *args, **kwargs).to(dtype=dtype)
+        pipeline.load_voice = _load_voice_cast
+
+    return pipeline
 
 
 def load_spacy():
@@ -70,8 +162,13 @@ def set_espeak_library():
 
 
 def main(file_path, voice, pick_manually, speed, output_folder='.',
-         max_chapters=None, max_sentences=None, selected_chapters=None, post_event=None):
+         max_chapters=None, max_sentences=None, selected_chapters=None, post_event=None,
+         device=None, precision='fp32'):
     if post_event: post_event('CORE_STARTED')
+    # If caller didn't pre-select a device (CLI does), resolve it here.
+    if device is None:
+        device = pick_device('auto')
+    print(f'Using device: {device} (precision: {precision})')
     load_spacy()
     if output_folder != '.':
         Path(output_folder).mkdir(parents=True, exist_ok=True)
@@ -107,14 +204,14 @@ def main(file_path, voice, pick_manually, speed, output_folder='.',
     stats = SimpleNamespace(
         total_chars=sum(map(len, texts)),
         processed_chars=0,
-        chars_per_sec=500 if torch.cuda.is_available() else 50)
+        chars_per_sec=chars_per_sec_estimate(device))
     print('Started at:', time.strftime('%H:%M:%S'))
     print(f'Total characters: {stats.total_chars:,}')
     print('Total words:', len(' '.join(texts).split()))
     eta = strfdelta((stats.total_chars - stats.processed_chars) / stats.chars_per_sec)
     print(f'Estimated time remaining (assuming {stats.chars_per_sec} chars/sec): {eta}')
     set_espeak_library()
-    pipeline = KPipeline(lang_code=voice[0])  # a for american or b for british etc.
+    pipeline = build_pipeline(voice[0], device, precision=precision)
 
     chapter_wav_files = []
     for i, chapter in enumerate(selected_chapters, start=1):
@@ -205,6 +302,44 @@ def split_long_sentence(text, max_length=400):
     return parts
 
 
+def batch_sentences(sentences, max_length=400):
+    """Pack consecutive short sentences into chunks of at most max_length chars.
+
+    Why: each call to Kokoro carries fixed per-call overhead (kernel launch on
+    GPU, tensor allocation, Python interop). When the source text is full of
+    short fragments — titles, list items, one-line paragraphs from an EPUB
+    extractor — that overhead dominates and the GPU can end up slower than
+    the CPU. Packing adjacent sentences into longer chunks amortizes the
+    overhead. Kokoro is called once per chunk and produces natural prosody
+    across the contained sentences.
+
+    Sentences already longer than max_length are split first via
+    split_long_sentence (same behavior as the non-English path).
+    """
+    chunks = []
+    cur, cur_len = [], 0
+    for s in sentences:
+        s = (s or "").strip()
+        if not s:
+            continue
+        if len(s) > max_length:
+            if cur:
+                chunks.append(' '.join(cur))
+                cur, cur_len = [], 0
+            chunks.extend(split_long_sentence(s, max_length))
+            continue
+        joiner = 1 if cur else 0
+        if cur_len + joiner + len(s) > max_length:
+            chunks.append(' '.join(cur))
+            cur, cur_len = [s], len(s)
+        else:
+            cur.append(s)
+            cur_len += joiner + len(s)
+    if cur:
+        chunks.append(' '.join(cur))
+    return chunks
+
+
 def gen_audio_segments(pipeline, text, voice, speed, stats=None, max_sentences=None, post_event=None):
     nlp = spacy.load('xx_ent_wiki_sm')
     nlp.add_pipe('sentencizer')
@@ -213,7 +348,10 @@ def gen_audio_segments(pipeline, text, voice, speed, stats=None, max_sentences=N
     lang_code = voice[0]
 
     if lang_code in 'ab':
-        sentences = [s.text for s in doc.sents]
+        # Batch sentences into ~1200-char chunks (well past Kokoro's 510-phoneme
+        # internal split, so Kokoro handles further splitting at optimal boundaries).
+        # See batch_sentences() for rationale; 1200 picked from a max_length sweep.
+        sentences = batch_sentences([s.text for s in doc.sents], max_length=1200)
     else:
         # For non-english languages, Kokoro truncates long sentences, so we split them manually
         sentences = []
@@ -239,9 +377,11 @@ def gen_audio_segments(pipeline, text, voice, speed, stats=None, max_sentences=N
     return audio_segments
 
 
-def gen_text(text, voice='af_heart', output_file='text.wav', speed=1, play=False):
+def gen_text(text, voice='af_heart', output_file='text.wav', speed=1, play=False, device=None, precision='fp32'):
     lang_code = voice[:1]
-    pipeline = KPipeline(lang_code=lang_code, repo_id='hexgrad/Kokoro-82M')
+    if device is None:
+        device = pick_device('auto')
+    pipeline = build_pipeline(lang_code, device, precision=precision)
     load_spacy()
     audio_segments = gen_audio_segments(pipeline, text, voice=voice, speed=speed);
     final_audio = np.concatenate(audio_segments)

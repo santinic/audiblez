@@ -327,12 +327,21 @@ def concat_wavs_with_ffmpeg(chapter_files, output_folder, filename):
         for wav_file in chapter_files:
             f.write(f"file '{wav_file}'\n")
     concat_file_path = Path(output_folder) / filename.replace('.epub', '.tmp.mp4')
-    subprocess.run([
+    # Default to ffmpeg's built-in 'aac' encoder, which ships with every build.
+    # libfdk_aac is non-free and absent from Homebrew's default ffmpeg, where
+    # it silently fails and leaves no output file.
+    encoder = os.environ.get('AUDIBLEZ_AAC_ENCODER', 'aac')
+    proc = subprocess.run([
         'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', wav_list_txt,
-        # '-c', 'copy',
-        '-c:a',  'libfdk_aac',
+        '-c:a',  encoder,
         '-b:a',  '192k',
         concat_file_path])
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg concat failed (exit {proc.returncode}) using encoder "
+            f"'{encoder}'. If this encoder is unavailable in your ffmpeg "
+            f"build, unset AUDIBLEZ_AAC_ENCODER to use the default 'aac'."
+        )
     Path(wav_list_txt).unlink()
     return concat_file_path
 
@@ -374,10 +383,14 @@ def create_m4b(chapter_files, filename, cover_image, output_folder):
         f'{final_filename}'  # Output file
     ])
 
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg m4b assembly failed (exit {proc.returncode}). "
+            f"Intermediate file left at {concat_file_path} for inspection."
+        )
     Path(concat_file_path).unlink()
-    if proc.returncode == 0:
-        print(f'{final_filename} created. Enjoy your audiobook.')
-        print('Feel free to delete the intermediary .wav chapter files, the .m4b is all you need.')
+    print(f'{final_filename} created. Enjoy your audiobook.')
+    print('Feel free to delete the intermediary .wav chapter files, the .m4b is all you need.')
 
 
 def probe_duration(file_name):

@@ -1,3 +1,3 @@
-import os, sys
+"""audiblez — generate audiobooks from e-books using Kokoro TTS."""
 
-sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+__version__ = "0.4.9"

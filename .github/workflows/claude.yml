@@ -1,0 +1,58 @@
+name: Claude Code
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    # SECURITY: this job has write + merge permissions, so it must only run for TRUSTED authors.
+    # Each branch requires both the `@claude` mention AND an author_association of OWNER / MEMBER /
+    # COLLABORATOR — a drive-by `@claude merge this` from an outside contributor can NOT trigger it.
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # merge the PR (gh pr merge)
+      pull-requests: write   # post review comments + merge
+      issues: write          # comment on issues/PR threads
+      id-token: write
+      actions: read # Required for Claude to read CI results on PRs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Allows Claude to read CI results on PRs (so the merge gate can check them).
+          additional_permissions: |
+            actions: read
+
+          # Tools + merge policy. Tools are SCOPED to read/inspect + a small set of `gh pr`
+          # subcommands (no Edit/Write, no general Bash, no `gh api`) so the worst this job can do
+          # is comment on / merge a PR — never push arbitrary code or call arbitrary APIs. The
+          # append-system-prompt encodes the merge gate: review + document always, merge ONLY when
+          # CI is green and the review is clean; otherwise comment why and stop.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh pr merge:*)"
+            --append-system-prompt "PR review-and-merge policy. When asked to review and/or merge a PR: (1) inspect the diff and post a review-summary comment documenting findings by severity — ALWAYS comment, whether or not you merge. (2) Merge ONLY when BOTH hold: every required CI check is passing (verify with `gh pr checks <number>` — treat any failing/pending/error check as a hard block) AND your review found no blocking correctness/security issues. Prefer `gh pr merge <number> --squash`. (3) If anything is red, pending, or you are uncertain, DO NOT merge: post a comment listing exactly what blocks it and what to fix. (4) NEVER use --admin or otherwise bypass branch protection or failing checks. (5) Never merge a PR that changes these workflow files or repository secrets without an explicit human approving review on the PR."
+

@@ -14,8 +14,15 @@ from audiblez.core import main, find_document_chapters_and_extract_texts
 
 class MainTest(unittest.TestCase):
     def base(self, name, url='', **kwargs):
-        if not Path(f'{name}.epub').exists():
-            os.system(f'wget {url} -O {name}.epub')
+        epub_path = Path(f'{name}.epub')
+        if not epub_path.exists() and url:
+            os.system(f'wget -q "{url}" -O "{name}.epub"')
+        # Integration test: needs the epub (downloaded or a local fixture). Skip cleanly
+        # when it can't be obtained (offline / source down / fixture absent) instead of
+        # erroring, so `unittest discover` stays green without network or fixtures.
+        if not epub_path.exists() or epub_path.stat().st_size == 0:
+            epub_path.unlink(missing_ok=True)
+            self.skipTest(f'could not obtain {name}.epub (no network/source/fixture)')
         Path(f'{name}.m4b').unlink(missing_ok=True)
         os.system(f'rm {name}_chapter_*.wav')
         merged_args = dict(voice='af_sky', pick_manually=False, speed=1.0, max_chapters=1, max_sentences=2)
@@ -51,11 +58,15 @@ class MainTest(unittest.TestCase):
         self.base('chinese', url, voice='zf_xiaobei')
 
     def test_leigh_and_play_result(self):
+        if not Path('leigh.epub').exists():
+            self.skipTest('leigh.epub fixture not present')
         book = epub.read_epub('leigh.epub')
         document_chapters = find_document_chapters_and_extract_texts(book)
         chapters = [c for c in document_chapters if c.get_name() == 'Text/Chap07.xhtml']
         self.base('leigh', voice='af_heart', selected_chapters=chapters, max_sentences=5)
-        subprocess.run(['ffplay', '-nodisp', '-autoexit', 'leigh.m4b'], check=True)
+        # Playback is interactive/blocking; only attempt it when explicitly opted in.
+        if os.environ.get('AUDIBLEZ_TEST_PLAY'):
+            subprocess.run(['ffplay', '-nodisp', '-autoexit', 'leigh.m4b'], check=True)
 
     def test_long_italian_sentence(self):
         text = ('È vero che non ho mai saputo troppo bene quante camere, quanti atri, quante scale e quanti corridoi '
@@ -64,3 +75,7 @@ class MainTest(unittest.TestCase):
                 'essa appiccicata, ma anche lontani nel tempo, nello spazio e nel ricordo, con mobili scintillanti e '
                 'strani, con orologi a pendolo di noce e candelabri con piccole foglie di ottone, ma questa volta la '
                 'mia casa buia, dalle cui finestre nevicava all’impazzata, mi è parsa sconfinata.')
+        from audiblez.core import split_long_sentence
+        parts = split_long_sentence(text, 400)
+        self.assertTrue(all(len(p) <= 400 for p in parts))
+        self.assertEqual(' '.join(parts).split(), text.split())

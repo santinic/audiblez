@@ -1,6 +1,18 @@
 name: Installing via pip and running
 run-name: pip install and run
-on: [ push, pull_request ]
+
+# This installs the PUBLISHED PyPI package (`pip install audiblez`), NOT the code in the branch,
+# so it can never gate a PR (it's green even when the PR breaks everything). It is only a canary
+# that the last release still installs + runs across the supported Pythons + Windows. Run it on a
+# weekly schedule (and on demand) instead of every push/PR, where it was pure duplicate-run noise.
+on:
+  schedule:
+    - cron: '37 6 * * 1'   # Mondays 06:37 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   install-and-run-on-python-3-11:
     runs-on: ubuntu-latest

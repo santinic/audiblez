@@ -1,0 +1,17 @@
+# Data-prep pipeline dependencies — install in their OWN virtualenv, separate from audiblez.
+#
+# IMPORTANT: install torch + torchaudio FIRST, matching your hardware, THEN this file:
+#   Arch + RX 7800 XT (ROCm):  pip install torch torchaudio --index-url https://download.pytorch.org/whl/rocm6.2
+#   Mac / CPU:                 pip install torch torchaudio
+# (whisperx pins its own faster-whisper/ctranslate2/pyannote; let it resolve those.)
+
+whisperx>=3.8          # transcribe + word-align + diarize + assign speakers (the spine)
+pyloudnorm             # EBU R128 loudness normalization per clip
+soundfile              # read/write wav
+numpy
+
+# Optional — only needed for the corresponding flags:
+speechbrain>=1.0       # --reference  (ECAPA speaker embedding; NOT HuggingFace-gated)
+demucs>=4.0            # --demucs     (vocal isolation for music-heavy episodes)
+
+# System tools (not pip): ffmpeg must be on PATH.  Arch: pacman -S ffmpeg   Mac: brew install ffmpeg

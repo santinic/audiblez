@@ -8,16 +8,17 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "ebooklib (>=0.18,<0.19)",
-    "soundfile (>=0.13.1,<0.14.0)",
-    "pick (>=2.4.0,<3.0.0)",
-    "bs4 (>=0.0.2,<0.0.3)",
-    "spacy (>=3.8.3,<4.0.0)",
-    "kokoro (==0.9.4)",
-    "misaki[zh] (>=0.9.2)",
-    "tabulate (>=0.9.0,<0.10.0)",
-    "epub-toc (>=1.0.0,<2.0.0)",
-    "qwen-tts (>=0.1.1,<0.2.0)",
+    "ebooklib>=0.18,<0.19",
+    "soundfile>=0.13.1,<0.14.0",
+    "pick>=2.4.0,<3.0.0",
+    "beautifulsoup4>=4.12,<5",
+    "lxml>=4.9",
+    "spacy>=3.8.3,<4.0.0",
+    "kokoro==0.9.4",
+    "misaki[zh]>=0.9.2",
+    "torch>=2.0.0",
+    "numpy>=1.24",
+    "tabulate>=0.9.0,<0.10.0",
 ]
 exclude = [
     "imgs",
@@ -26,6 +27,19 @@ exclude = [
     "*.m4b",
     "cover",
     "chapters.txt"
+]
+
+[project.optional-dependencies]
+# GUI-only dependencies. Install the graphical interface with:
+#   pip install "audiblez[ui]"
+ui = [
+    "wxPython>=4.2.0",
+    "Pillow>=10.0.0",
+]
+# Apple Silicon native narration engine (optional). Install with:
+#   pip install "audiblez[mlx]"
+mlx = [
+    "mlx-audio>=0.4.0 ; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [build-system]
@@ -44,3 +58,35 @@ audiblez-ui = "audiblez.ui:main"
 
 [tool.poetry.group.dev.dependencies]
 deptry = "^0.23.0"
+ruff = "^0.15.0"
+
+[tool.deptry]
+# The standalone data-prep tool (tools/voice_dataset/) ships its OWN requirements.txt
+# (whisperx/demucs/speechbrain/...) and is not part of the audiblez package, so it is
+# excluded from the package-level dependency audit.
+extend_exclude = ["tools"]
+
+[tool.deptry.per_rule_ignores]
+# lxml is used via BeautifulSoup(features='lxml') (not imported by name);
+# misaki[zh] provides kokoro's Chinese g2p backend used at runtime.
+DEP002 = ["lxml", "misaki"]
+# phonemizer (provided by phonemizer-fork) is supplied by the kokoro/misaki TTS
+# stack and imported under a guarded try/except in set_espeak_library.
+DEP003 = ["phonemizer"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# High-signal only: real bugs (F), pycodestyle basics (E/W), bugbear (B). We deliberately
+# do NOT enable import-sorting (I) or pyupgrade (UP) — they'd churn this upstream-fork code
+# for no correctness gain. Run: `ruff check` (lint) / `ruff check --fix` (autofix).
+select = ["E", "F", "W", "B"]
+ignore = [
+    "E501",           # long lines are common here; not worth the reflow churn
+    "E701", "E702",   # one-line `if cond: stmt` is a deliberate style in this codebase
+    "E731",           # a few intentional `name = lambda ...` assignments
+    "E741",           # single-char loop var in the upstream voices loop
+    "B905",           # zip(..., strict=) — adding it changes behavior; low value here
+]

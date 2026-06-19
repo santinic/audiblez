@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from ebooklib import epub
 
 from audiblez.core import find_document_chapters_and_extract_texts, find_good_chapters
@@ -6,6 +7,11 @@ from audiblez.core import find_document_chapters_and_extract_texts, find_good_ch
 
 class FindChaptersTest(unittest.TestCase):
     def base(self, file, expected_chapter_names):
+        # These assert exact chapter detection against specific local epub fixtures
+        # (not shipped in the repo). Skip cleanly when a fixture isn't present rather
+        # than erroring, so `unittest discover` stays green without the fixtures.
+        if not Path(file).exists():
+            self.skipTest(f'epub fixture not present: {file}')
         book = epub.read_epub(file)
         document_chapters = find_document_chapters_and_extract_texts(book)
         chapters = find_good_chapters(document_chapters)

@@ -19,6 +19,38 @@ from pathlib import Path
 
 from audiblez.voices import voices, flags
 
+from huggingface_hub.constants import HF_HUB_CACHE
+
+KOKORO_REPO_DIR = Path(HF_HUB_CACHE) / 'models--hexgrad--Kokoro-82M'
+KOKORO_MODEL_BYTES = 327_212_226  # size of kokoro-v1_0.pth, used for first-run progress
+
+
+def kokoro_model_cached():
+    return any(KOKORO_REPO_DIR.glob('snapshots/*/kokoro-v1_0.pth'))
+
+
+def kokoro_cache_bytes():
+    total = 0
+    for f in KOKORO_REPO_DIR.glob('blobs/*'):
+        try:
+            total += f.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def recommended_workers():
+    """A safe default for parallel chapters: bounded by physical cores and RAM
+    (each worker holds the full model, ~1.5 GB)."""
+    physical = max(1, (os.cpu_count() or 2) // 2)
+    try:
+        ram_gb = (os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')) / 1e9
+        by_ram = max(1, int(ram_gb // 3))
+    except (ValueError, OSError, AttributeError):
+        by_ram = physical
+    return max(1, min(physical, by_ram))
+
+
 EVENTS = {
     'CORE_STARTED': NewEvent(),
     'CORE_PROGRESS': NewEvent(),
@@ -87,10 +119,19 @@ class MainWindow(wx.Frame):
         self.start_button.Show()
 
     def on_core_progress(self, event):
-        # print('CORE_PROGRESS', event.progress)
-        self.progress_bar.SetValue(event.stats.progress)
-        self.progress_bar_label.SetLabel(f"Synthesis Progress: {event.stats.progress}%")
-        self.eta_label.SetLabel(f"Estimated Time Remaining: {event.stats.eta}")
+        s = event.stats
+        self.progress_bar.SetValue(s.progress)
+        note = getattr(s, 'note', None)
+        done = getattr(s, 'chapters_done', None)
+        total = getattr(s, 'chapters_total', None)
+        if note:
+            label = note
+        elif done is not None and total:
+            label = f"Progress: {s.progress}%  —  {done}/{total} chapters done"
+        else:
+            label = f"Synthesis Progress: {s.progress}%"
+        self.progress_bar_label.SetLabel(label)
+        self.eta_label.SetLabel(f"Estimated Time Remaining: {getattr(s, 'eta', '')}")
         self.synth_panel.Layout()
 
     def on_core_finished(self, event):
@@ -320,6 +361,29 @@ class MainWindow(wx.Frame):
         sizer.Add(self.output_folder_text_ctrl, pos=(3, 1), flag=wx.ALL | wx.EXPAND, border=border)
         sizer.Add(output_folder_button, pos=(4, 1), flag=wx.ALL, border=border)
 
+        # Parallel chapters (worker processes) — main speed lever on CPU
+        workers_label = wx.StaticText(panel, label="Parallel chapters:")
+        rec = recommended_workers()
+        self.selected_workers = rec
+        max_workers = max(2, (os.cpu_count() or 4) // 2)  # physical cores; beyond this just oversubscribes
+        workers_spin = wx.SpinCtrl(panel, min=1, max=max_workers, initial=rec)
+        workers_spin.SetToolTip(
+            "How many chapters to synthesize at the same time.\n"
+            "More = faster on multi-core CPUs, but each worker loads the full\n"
+            "model (~1.5 GB RAM) and the machine runs hotter/busier.\n"
+            "1 = slowest but lightest. Chapters sound identical either way.\n"
+            f"Recommended for this Mac: {rec}.")
+        workers_spin.Bind(wx.EVT_SPINCTRL, self.on_select_workers)
+        sizer.Add(workers_label, pos=(5, 0), flag=wx.ALL, border=border)
+        sizer.Add(workers_spin, pos=(5, 1), flag=wx.ALL, border=border)
+
+        workers_help = wx.StaticText(panel, label=f"↑ faster · more RAM & heat · recommended {rec}")
+        workers_help.SetForegroundColour(wx.Colour(130, 130, 130))
+        help_font = workers_help.GetFont()
+        help_font.SetPointSize(max(8, help_font.GetPointSize() - 2))
+        workers_help.SetFont(help_font)
+        sizer.Add(workers_help, pos=(6, 1), flag=wx.ALL, border=border)
+
     def create_synthesis_panel(self):
         # Think and identify layout issue with the folling code
         panel_box = wx.Panel(self.right_panel, style=wx.SUNKEN_BORDER)
@@ -476,8 +540,65 @@ class MainWindow(wx.Frame):
     def get_selected_speed(self):
         return float(self.selected_speed)
 
+    def on_select_workers(self, event):
+        self.selected_workers = event.GetInt()
+
+    def get_selected_workers(self):
+        return getattr(self, 'selected_workers', 1)
+
+    def ensure_model_ready(self, lang_code):
+        """First run only: download the spaCy + Kokoro models behind a progress
+        dialog, so the user isn't left staring at a frozen button while ~330 MB
+        downloads silently. Returns False if setup failed."""
+        import spacy
+        from audiblez import core
+        if kokoro_model_cached() and spacy.util.is_package('xx_ent_wiki_sm'):
+            return True
+        dlg = wx.ProgressDialog(
+            "Setting up Audiblez (first run)", "Preparing language model…",
+            maximum=100, parent=self,
+            style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE | wx.PD_SMOOTH | wx.PD_CAN_ABORT)
+        state = {'done': False, 'error': None, 'phase': 'spacy'}
+
+        def work():
+            try:
+                core.load_spacy()
+                core.set_espeak_library()
+                state['phase'] = 'model'
+                from kokoro import KPipeline
+                KPipeline(lang_code=lang_code)  # triggers model + default voice download
+            except Exception as e:
+                state['error'] = e
+            finally:
+                state['done'] = True
+
+        threading.Thread(target=work, daemon=True).start()
+        cancelled = False
+        try:
+            while not state['done']:
+                if state['phase'] == 'model' and not kokoro_model_cached():
+                    mb = kokoro_cache_bytes() // 1_000_000
+                    pct = min(99, int(kokoro_cache_bytes() * 100 / KOKORO_MODEL_BYTES))
+                    keep_going, _ = dlg.Update(pct, f"Downloading Kokoro model… {mb} MB / ~330 MB (first run only)")
+                else:
+                    keep_going, _ = dlg.Pulse("Preparing language model…")
+                if not keep_going:  # user pressed Cancel
+                    cancelled = True
+                    break
+                wx.MilliSleep(150)
+        finally:
+            dlg.Destroy()
+        if cancelled:
+            return False
+        if state['error']:
+            wx.MessageBox(f"Setup failed:\n{state['error']}", "Audiblez", wx.ICON_ERROR)
+            return False
+        return True
+
     def on_preview_chapter(self, event):
         lang_code = self.get_selected_voice()[0]
+        if not self.ensure_model_ready(lang_code):
+            return
         button = event.GetEventObject()
         button.SetLabel("⏳")
         button.Disable()
@@ -511,10 +632,12 @@ class MainWindow(wx.Frame):
         self.preview_threads.append(thread)
 
     def on_start(self, event):
-        self.synthesis_in_progress = True
         file_path = self.selected_file_path
         voice = self.selected_voice.split(' ')[1]  # Remove the flag
         speed = float(self.selected_speed)
+        if not self.ensure_model_ready(voice[0]):
+            return
+        self.synthesis_in_progress = True
         selected_chapters = [chapter for chapter in self.document_chapters if chapter.is_selected]
         self.start_button.Disable()
         self.params_panel.Disable()
@@ -530,7 +653,7 @@ class MainWindow(wx.Frame):
         self.core_thread = CoreThread(params=dict(
             file_path=file_path, voice=voice, pick_manually=False, speed=speed,
             output_folder=self.output_folder_text_ctrl.GetValue(),
-            selected_chapters=selected_chapters))
+            selected_chapters=selected_chapters, workers=self.get_selected_workers()), window=self)
         self.core_thread.start()
 
     def on_open(self, event):
@@ -566,12 +689,13 @@ class MainWindow(wx.Frame):
 
 
 class CoreThread(threading.Thread):
-    def __init__(self, params):
+    def __init__(self, params, window):
         super().__init__()
         self.params = params
+        self.window = window
 
     def run(self):
-        import core
+        from audiblez import core
         core.main(**self.params, post_event=self.post_event)
 
     def post_event(self, event_name, **kwargs):
@@ -580,7 +704,7 @@ class CoreThread(threading.Thread):
         event_object = EventObject()
         for k, v in kwargs.items():
             setattr(event_object, k, v)
-        wx.PostEvent(wx.GetApp().GetTopWindow(), event_object)
+        wx.PostEvent(self.window, event_object)
 
 
 def main():

@@ -21,6 +21,7 @@ def cli_main():
     parser.add_argument('-s', '--speed', default=1.0, help=f'Set speed from 0.5 to 2.0', type=float)
     parser.add_argument('-c', '--cuda', default=False, help=f'Use GPU via Cuda in Torch if available', action='store_true')
     parser.add_argument('-o', '--output', default='.', help='Output folder for the audiobook and temporary files', metavar='FOLDER')
+    parser.add_argument('-w', '--workers', default=1, type=int, help='Synthesize this many chapters in parallel (faster on multi-core CPUs, uses ~1.5 GB RAM each)')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -35,8 +36,8 @@ def cli_main():
         else:
             print('CUDA GPU not available. Defaulting to CPU')
 
-    from core import main
-    main(args.epub_file_path, args.voice, args.pick, args.speed, args.output)
+    from audiblez.core import main
+    main(args.epub_file_path, args.voice, args.pick, args.speed, args.output, workers=args.workers)
 
 
 if __name__ == '__main__':

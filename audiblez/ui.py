@@ -365,7 +365,8 @@ class MainWindow(wx.Frame):
         workers_label = wx.StaticText(panel, label="Parallel chapters:")
         rec = recommended_workers()
         self.selected_workers = rec
-        workers_spin = wx.SpinCtrl(panel, min=1, max=max(2, os.cpu_count() or 2), initial=rec)
+        max_workers = max(2, (os.cpu_count() or 4) // 2)  # physical cores; beyond this just oversubscribes
+        workers_spin = wx.SpinCtrl(panel, min=1, max=max_workers, initial=rec)
         workers_spin.SetToolTip(
             "How many chapters to synthesize at the same time.\n"
             "More = faster on multi-core CPUs, but each worker loads the full\n"
@@ -556,7 +557,7 @@ class MainWindow(wx.Frame):
         dlg = wx.ProgressDialog(
             "Setting up Audiblez (first run)", "Preparing language model…",
             maximum=100, parent=self,
-            style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE | wx.PD_SMOOTH)
+            style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE | wx.PD_SMOOTH | wx.PD_CAN_ABORT)
         state = {'done': False, 'error': None, 'phase': 'spacy'}
 
         def work():
@@ -572,16 +573,23 @@ class MainWindow(wx.Frame):
                 state['done'] = True
 
         threading.Thread(target=work, daemon=True).start()
-        while not state['done']:
-            if state['phase'] == 'model' and not kokoro_model_cached():
-                mb = kokoro_cache_bytes() // 1_000_000
-                pct = min(99, int(kokoro_cache_bytes() * 100 / KOKORO_MODEL_BYTES))
-                dlg.Update(pct, f"Downloading Kokoro voice model… {mb} MB / ~330 MB\n(first run only)")
-            else:
-                dlg.Pulse("Preparing language model…")
-            wx.MilliSleep(200)
-        dlg.Update(100, "Ready")
-        dlg.Destroy()
+        cancelled = False
+        try:
+            while not state['done']:
+                if state['phase'] == 'model' and not kokoro_model_cached():
+                    mb = kokoro_cache_bytes() // 1_000_000
+                    pct = min(99, int(kokoro_cache_bytes() * 100 / KOKORO_MODEL_BYTES))
+                    keep_going, _ = dlg.Update(pct, f"Downloading Kokoro model… {mb} MB / ~330 MB (first run only)")
+                else:
+                    keep_going, _ = dlg.Pulse("Preparing language model…")
+                if not keep_going:  # user pressed Cancel
+                    cancelled = True
+                    break
+                wx.MilliSleep(150)
+        finally:
+            dlg.Destroy()
+        if cancelled:
+            return False
         if state['error']:
             wx.MessageBox(f"Setup failed:\n{state['error']}", "Audiblez", wx.ICON_ERROR)
             return False

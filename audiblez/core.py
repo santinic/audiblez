@@ -70,7 +70,8 @@ def set_espeak_library():
 
 
 def main(file_path, voice, pick_manually, speed, output_folder='.',
-         max_chapters=None, max_sentences=None, selected_chapters=None, post_event=None):
+         max_chapters=None, max_sentences=None, selected_chapters=None, post_event=None,
+         workers=1):
     if post_event: post_event('CORE_STARTED')
     load_spacy()
     if output_folder != '.':
@@ -113,50 +114,168 @@ def main(file_path, voice, pick_manually, speed, output_folder='.',
     print('Total words:', len(' '.join(texts).split()))
     eta = strfdelta((stats.total_chars - stats.processed_chars) / stats.chars_per_sec)
     print(f'Estimated time remaining (assuming {stats.chars_per_sec} chars/sec): {eta}')
-    set_espeak_library()
-    pipeline = KPipeline(lang_code=voice[0])  # a for american or b for british etc.
-
+    # Build the per-chapter plan: keep wav paths in chapter order for the m4b,
+    # and collect the subset that still needs synthesis.
     chapter_wav_files = []
+    todo = []  # list of (chapter_index, i, text, wav_path)
     for i, chapter in enumerate(selected_chapters, start=1):
         if max_chapters and i > max_chapters: break
         text = chapter.extracted_text
         xhtml_file_name = chapter.get_name().replace(' ', '_').replace('/', '_').replace('\\', '_')
         chapter_wav_path = Path(output_folder) / filename.replace(extension, f'_chapter_{i}_{voice}_{xhtml_file_name}.wav')
-        chapter_wav_files.append(chapter_wav_path)
         if Path(chapter_wav_path).exists():
             print(f'File for chapter {i} already exists. Skipping')
+            chapter_wav_files.append(chapter_wav_path)
             stats.processed_chars += len(text)
             if post_event:
                 post_event('CORE_CHAPTER_FINISHED', chapter_index=chapter.chapter_index)
             continue
         if len(text.strip()) < 10:
             print(f'Skipping empty chapter {i}')
-            chapter_wav_files.remove(chapter_wav_path)
             continue
         if i == 1:
             # add intro text
             text = f'{title} – {creator}.\n\n' + text
-        start_time = time.time()
-        if post_event: post_event('CORE_CHAPTER_STARTED', chapter_index=chapter.chapter_index)
-        audio_segments = gen_audio_segments(
-            pipeline, text, voice, speed, stats, post_event=post_event, max_sentences=max_sentences)
-        if audio_segments:
-            final_audio = np.concatenate(audio_segments)
-            soundfile.write(chapter_wav_path, final_audio, sample_rate)
-            end_time = time.time()
-            delta_seconds = end_time - start_time
-            chars_per_sec = len(text) / delta_seconds
-            print('Chapter written to', chapter_wav_path)
-            if post_event: post_event('CORE_CHAPTER_FINISHED', chapter_index=chapter.chapter_index)
-            print(f'Chapter {i} read in {delta_seconds:.2f} seconds ({chars_per_sec:.0f} characters per second)')
-        else:
-            print(f'Warning: No audio generated for chapter {i}')
-            chapter_wav_files.remove(chapter_wav_path)
+        chapter_wav_files.append(chapter_wav_path)
+        todo.append((chapter.chapter_index, i, text, chapter_wav_path))
+
+    stats.chapters_total = len(todo)
+    stats.chapters_done = 0
+    stats.note = None
+    if workers and workers > 1 and len(todo) > 1:
+        synth_chapters_parallel(todo, voice, speed, max_sentences, stats, workers, post_event)
+    else:
+        synth_chapters_serial(todo, voice, speed, max_sentences, stats, post_event)
 
     if has_ffmpeg:
+        chapter_wav_files = [p for p in chapter_wav_files if Path(p).exists()]
         create_index_file(title, creator, chapter_wav_files, output_folder)
         create_m4b(chapter_wav_files, filename, cover_image, output_folder)
         if post_event: post_event('CORE_FINISHED')
+
+
+def synth_chapters_serial(todo, voice, speed, max_sentences, stats, post_event):
+    """Render chapters one at a time in this process (fine-grained progress)."""
+    set_espeak_library()
+    pipeline = KPipeline(lang_code=voice[0])
+    for chapter_index, i, text, wav_path in todo:
+        start_time = time.time()
+        if post_event: post_event('CORE_CHAPTER_STARTED', chapter_index=chapter_index)
+        audio_segments = gen_audio_segments(
+            pipeline, text, voice, speed, stats, post_event=post_event, max_sentences=max_sentences)
+        if audio_segments:
+            soundfile.write(wav_path, np.concatenate(audio_segments), sample_rate)
+            print('Chapter written to', wav_path)
+            stats.chapters_done += 1
+            if post_event: post_event('CORE_CHAPTER_FINISHED', chapter_index=chapter_index)
+            print(f'Chapter {i} read in {time.time() - start_time:.2f} seconds')
+        else:
+            print(f'Warning: No audio generated for chapter {i}')
+
+
+def _synth_chapter_worker(args):
+    """Top-level (picklable) worker for ProcessPoolExecutor: render ONE chapter
+    to a wav file in its own process. Reports running char counts to a shared
+    queue so the parent can show smooth overall progress. Returns True if audio
+    was written."""
+    import torch
+    text, voice, speed, wav_path, threads, max_sentences, chapter_index, progress_queue = args
+    torch.set_num_threads(threads)
+    set_espeak_library()
+    pipeline = KPipeline(lang_code=voice[0])
+    local_stats = SimpleNamespace(total_chars=max(1, len(text)), processed_chars=0, chars_per_sec=50)
+
+    def report(event, **kw):
+        if event == 'CORE_PROGRESS' and progress_queue is not None:
+            try:
+                progress_queue.put((chapter_index, kw['stats'].processed_chars))
+            except Exception:
+                pass
+
+    audio_segments = gen_audio_segments(
+        pipeline, text, voice, speed, local_stats, max_sentences=max_sentences, post_event=report)
+    if not audio_segments:
+        return False
+    soundfile.write(wav_path, np.concatenate(audio_segments), sample_rate)
+    return True
+
+
+def synth_chapters_parallel(todo, voice, speed, max_sentences, stats, workers, post_event):
+    """Render chapters across worker processes. Chapters are independent, so this
+    gives a real speedup on multi-core CPUs; the audio is identical to serial.
+    Workers stream per-chapter char counts back through a queue so the overall
+    progress bar advances smoothly, not only when a whole chapter finishes."""
+    import multiprocessing
+    import queue as queue_mod
+    from concurrent.futures import ProcessPoolExecutor
+    threads = max(1, ((os.cpu_count() or 2) // 2) // workers)  # share physical cores
+    ctx = multiprocessing.get_context('spawn')  # safe with torch on every platform
+    manager = ctx.Manager()
+    progress_queue = manager.Queue()
+    base_processed = stats.processed_chars  # chars from already-rendered (skipped) chapters
+    per_chapter = {}  # chapter_index -> chars synthesized so far
+    started = set()   # chapters a worker has actually begun
+    t_start = None    # wall-clock when the first real chars were synthesized
+
+    def push_progress():
+        nonlocal t_start
+        if not post_event:
+            return
+        done_now = sum(per_chapter.values())
+        if per_chapter:
+            stats.note = None  # real work started; drop the "loading" message
+            if t_start is None:
+                t_start = time.time()
+        stats.processed_chars = base_processed + done_now
+        stats.progress = min(100, stats.processed_chars * 100 // stats.total_chars)
+        remaining = max(0, stats.total_chars - stats.processed_chars)
+        elapsed = (time.time() - t_start) if t_start else 0
+        if elapsed > 5 and done_now > 0:  # adaptive: measure the real rate on this machine
+            stats.eta = strfdelta(remaining / (done_now / elapsed))
+        else:
+            stats.eta = strfdelta(remaining / stats.chars_per_sec)
+        post_event('CORE_PROGRESS', stats=stats)
+
+    stats.note = f'Starting {workers} workers (loading model)…'
+    push_progress()
+    print(f'Synthesizing {len(todo)} chapters with {workers} workers ({threads} torch threads each)')
+    with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as ex:
+        fut_meta = {}
+        for chapter_index, i, text, wav_path in todo:
+            args = (text, voice, speed, str(wav_path), threads, max_sentences, chapter_index, progress_queue)
+            fut_meta[ex.submit(_synth_chapter_worker, args)] = (chapter_index, i, len(text))
+        pending = set(fut_meta)
+        while pending:
+            while True:  # drain streamed progress
+                try:
+                    ck, done = progress_queue.get_nowait()
+                except queue_mod.Empty:
+                    break
+                if ck not in started:  # first sign of life from this chapter
+                    started.add(ck)
+                    if post_event: post_event('CORE_CHAPTER_STARTED', chapter_index=ck)
+                per_chapter[ck] = done
+            push_progress()
+            for fut in [f for f in pending if f.done()]:
+                pending.discard(fut)
+                chapter_index, i, char_len = fut_meta[fut]
+                try:
+                    wrote_audio = fut.result()
+                except Exception as e:
+                    print(f'Chapter {i} failed: {e}')
+                    wrote_audio = False
+                per_chapter[chapter_index] = char_len  # count the whole chapter as done
+                stats.chapters_done += 1
+                if not wrote_audio:
+                    print(f'Warning: No audio generated for chapter {i}')
+                elif post_event:
+                    if chapter_index not in started:
+                        post_event('CORE_CHAPTER_STARTED', chapter_index=chapter_index)
+                    post_event('CORE_CHAPTER_FINISHED', chapter_index=chapter_index)
+                print(f'Chapter {i} done — {stats.chapters_done}/{stats.chapters_total}')
+            push_progress()
+            time.sleep(0.3)
+    manager.shutdown()
 
 
 def find_cover(book):

@@ -571,7 +571,7 @@ class CoreThread(threading.Thread):
         self.params = params
 
     def run(self):
-        import core
+        from audiblez import core
         core.main(**self.params, post_event=self.post_event)
 
     def post_event(self, event_name, **kwargs):

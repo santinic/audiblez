@@ -530,7 +530,7 @@ class MainWindow(wx.Frame):
         self.core_thread = CoreThread(params=dict(
             file_path=file_path, voice=voice, pick_manually=False, speed=speed,
             output_folder=self.output_folder_text_ctrl.GetValue(),
-            selected_chapters=selected_chapters))
+            selected_chapters=selected_chapters), window=self)
         self.core_thread.start()
 
     def on_open(self, event):
@@ -566,9 +566,10 @@ class MainWindow(wx.Frame):
 
 
 class CoreThread(threading.Thread):
-    def __init__(self, params):
+    def __init__(self, params, window):
         super().__init__()
         self.params = params
+        self.window = window
 
     def run(self):
         from audiblez import core
@@ -580,7 +581,7 @@ class CoreThread(threading.Thread):
         event_object = EventObject()
         for k, v in kwargs.items():
             setattr(event_object, k, v)
-        wx.PostEvent(wx.GetApp().GetTopWindow(), event_object)
+        wx.PostEvent(self.window, event_object)
 
 
 def main():

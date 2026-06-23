@@ -236,46 +236,54 @@ def synth_chapters_parallel(todo, voice, speed, max_sentences, stats, workers, p
             stats.eta = strfdelta(remaining / stats.chars_per_sec)
         post_event('CORE_PROGRESS', stats=stats)
 
+    completed = set()  # chapters fully finished (ignore late streamed stragglers)
     stats.note = f'Starting {workers} workers (loading model)…'
     push_progress()
     print(f'Synthesizing {len(todo)} chapters with {workers} workers ({threads} torch threads each)')
-    with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as ex:
-        fut_meta = {}
-        for chapter_index, i, text, wav_path in todo:
-            args = (text, voice, speed, str(wav_path), threads, max_sentences, chapter_index, progress_queue)
-            fut_meta[ex.submit(_synth_chapter_worker, args)] = (chapter_index, i, len(text))
-        pending = set(fut_meta)
-        while pending:
-            while True:  # drain streamed progress
-                try:
-                    ck, done = progress_queue.get_nowait()
-                except queue_mod.Empty:
-                    break
-                if ck not in started:  # first sign of life from this chapter
-                    started.add(ck)
-                    if post_event: post_event('CORE_CHAPTER_STARTED', chapter_index=ck)
-                per_chapter[ck] = done
-            push_progress()
-            for fut in [f for f in pending if f.done()]:
-                pending.discard(fut)
-                chapter_index, i, char_len = fut_meta[fut]
-                try:
-                    wrote_audio = fut.result()
-                except Exception as e:
-                    print(f'Chapter {i} failed: {e}')
-                    wrote_audio = False
-                per_chapter[chapter_index] = char_len  # count the whole chapter as done
-                stats.chapters_done += 1
-                if not wrote_audio:
-                    print(f'Warning: No audio generated for chapter {i}')
-                elif post_event:
-                    if chapter_index not in started:
-                        post_event('CORE_CHAPTER_STARTED', chapter_index=chapter_index)
-                    post_event('CORE_CHAPTER_FINISHED', chapter_index=chapter_index)
-                print(f'Chapter {i} done — {stats.chapters_done}/{stats.chapters_total}')
-            push_progress()
-            time.sleep(0.3)
-    manager.shutdown()
+    try:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as ex:
+            fut_meta = {}
+            for chapter_index, i, text, wav_path in todo:
+                args = (text, voice, speed, str(wav_path), threads, max_sentences, chapter_index, progress_queue)
+                fut_meta[ex.submit(_synth_chapter_worker, args)] = (chapter_index, i, len(text))
+            pending = set(fut_meta)
+            while pending:
+                while True:  # drain streamed progress
+                    try:
+                        ck, done = progress_queue.get_nowait()
+                    except queue_mod.Empty:
+                        break
+                    except (EOFError, OSError):  # manager gone; stop draining
+                        break
+                    if ck in completed:
+                        continue  # late straggler for a finished chapter -> never go backward
+                    if ck not in started:  # first sign of life from this chapter
+                        started.add(ck)
+                        if post_event: post_event('CORE_CHAPTER_STARTED', chapter_index=ck)
+                    per_chapter[ck] = done
+                push_progress()
+                for fut in [f for f in pending if f.done()]:
+                    pending.discard(fut)
+                    chapter_index, i, char_len = fut_meta[fut]
+                    try:
+                        wrote_audio = fut.result()
+                    except Exception as e:
+                        print(f'Chapter {i} failed: {e}')
+                        wrote_audio = False
+                    completed.add(chapter_index)
+                    per_chapter[chapter_index] = char_len  # count the whole chapter as done
+                    stats.chapters_done += 1
+                    if not wrote_audio:
+                        print(f'Warning: No audio generated for chapter {i}')
+                    elif post_event:
+                        if chapter_index not in started:
+                            post_event('CORE_CHAPTER_STARTED', chapter_index=chapter_index)
+                        post_event('CORE_CHAPTER_FINISHED', chapter_index=chapter_index)
+                    print(f'Chapter {i} done — {stats.chapters_done}/{stats.chapters_total}')
+                push_progress()
+                time.sleep(0.3)
+    finally:
+        manager.shutdown()
 
 
 def find_cover(book):
@@ -459,7 +467,9 @@ def concat_wavs_with_ffmpeg(chapter_files, output_folder, filename):
     with open(wav_list_txt, 'w') as f:
         for wav_file in chapter_files:
             f.write(f"file '{wav_file}'\n")
-    concat_file_path = Path(output_folder) / filename.replace('.epub', '.tmp.mp4')
+    # Matroska holds raw PCM on every ffmpeg build; PCM-in-MP4 only works on
+    # ffmpeg >= 7, so use .mka for the lossless intermediate.
+    concat_file_path = Path(output_folder) / filename.replace('.epub', '.tmp.mka')
     subprocess.run([
         'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', wav_list_txt,
         '-c', 'copy',  # mux wavs as-is; create_m4b does the single AAC encode

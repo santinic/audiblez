@@ -205,9 +205,21 @@ def split_long_sentence(text, max_length=400):
     return parts
 
 
+_nlp = None
+
+
+def get_sentencizer():
+    """Load the spaCy sentence splitter once and reuse it. It was previously
+    reloaded inside gen_audio_segments on every chapter (~1-2s each)."""
+    global _nlp
+    if _nlp is None:
+        _nlp = spacy.load('xx_ent_wiki_sm')
+        _nlp.add_pipe('sentencizer')
+    return _nlp
+
+
 def gen_audio_segments(pipeline, text, voice, speed, stats=None, max_sentences=None, post_event=None):
-    nlp = spacy.load('xx_ent_wiki_sm')
-    nlp.add_pipe('sentencizer')
+    nlp = get_sentencizer()
     audio_segments = []
     doc = nlp(text)
     lang_code = voice[0]
@@ -225,14 +237,16 @@ def gen_audio_segments(pipeline, text, voice, speed, stats=None, max_sentences=N
             else:
                 sentences.append(sent.text)
 
-    for i, sent_text in enumerate(sentences):
-        if max_sentences and i > max_sentences: break
+    if max_sentences:
+        sentences = sentences[:max_sentences]
+
+    for sent_text in sentences:
         for gs, ps, audio in pipeline(sent_text, voice=voice, speed=speed, split_pattern=r'\n\n\n'):
             audio_segments.append(audio)
         if stats:
             stats.processed_chars += len(sent_text)
-            stats.progress = stats.processed_chars * 100 // stats.total_chars
-            stats.eta = strfdelta((stats.total_chars - stats.processed_chars) / stats.chars_per_sec)
+            stats.progress = min(100, stats.processed_chars * 100 // stats.total_chars)
+            stats.eta = strfdelta(max(0, stats.total_chars - stats.processed_chars) / stats.chars_per_sec)
             if post_event: post_event('CORE_PROGRESS', stats=stats)
             print(f'Estimated time remaining: {stats.eta}')
             print('Progress:', f'{stats.progress}%\n')

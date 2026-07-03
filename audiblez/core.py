@@ -321,62 +321,69 @@ def strfdelta(tdelta, fmt='{D:02}d {H:02}h {M:02}m {S:02}s'):
     return f.format(fmt, **values)
 
 
-def concat_wavs_with_ffmpeg(chapter_files, output_folder, filename):
+def create_wav_list_file(chapter_files, output_folder, filename):
     wav_list_txt = Path(output_folder) / filename.replace('.epub', '_wav_list.txt')
     with open(wav_list_txt, 'w') as f:
         for wav_file in chapter_files:
             f.write(f"file '{wav_file}'\n")
-    concat_file_path = Path(output_folder) / filename.replace('.epub', '.tmp.mp4')
-    subprocess.run([
-        'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', wav_list_txt,
-        # '-c', 'copy',
-        '-c:a',  'libfdk_aac',
-        '-b:a',  '192k',
-        concat_file_path])
-    Path(wav_list_txt).unlink()
-    return concat_file_path
+    return wav_list_txt
 
 
 def create_m4b(chapter_files, filename, cover_image, output_folder):
-    concat_file_path = concat_wavs_with_ffmpeg(chapter_files, output_folder, filename)
+    wav_list_txt = create_wav_list_file(chapter_files, output_folder, filename)
     final_filename = Path(output_folder) / filename.replace('.epub', '.m4b')
     chapters_txt_path = Path(output_folder) / "chapters.txt"
-    print('Creating M4B file...')
+    print('Creating M4B file with iPhone-ready AAC audio...')
 
     if cover_image:
         cover_file_path = Path(output_folder) / 'cover'
         with open(cover_file_path, 'wb') as f:
             f.write(cover_image)
-        cover_image_args = [
+        cover_input_args = [
             '-i', f'{cover_file_path}',
+        ]
+        cover_output_args = [
             '-map', '2:v',  # Map cover image
             '-disposition:v', 'attached_pic',  # Ensure cover is embedded
-            '-c:v', 'copy',  # Keep cover unchanged
+            '-c:v', 'mjpeg',  # Use an MP4-compatible attached picture codec
+            '-q:v', '3',
         ]
     else:
-        cover_image_args = []
+        cover_file_path = None
+        cover_input_args = []
+        cover_output_args = []
 
-    proc = subprocess.run([
-        'ffmpeg',
-        '-y',  # Overwrite output
-        
-        '-i', f'{concat_file_path}',  # Input audio
-        '-i', f'{chapters_txt_path}',  # Input chapters
-        *cover_image_args,  # Cover image (if provided)
+    try:
+        proc = subprocess.run([
+            'ffmpeg',
+            '-y',  # Overwrite output
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', f'{wav_list_txt}',  # Input 0 file (chapter WAV list)
+            '-i', f'{chapters_txt_path}',  # Input 1 file (chapters)
+            *cover_input_args,  # Cover image input, if provided
+            '-map', '0:a:0',  # Map only the concatenated audio
+            '-map_metadata', '1',  # Map title/artist metadata
+            '-map_chapters', '1',  # Preserve chapter markers
+            '-c:a', 'aac',  # Convert raw WAV/PCM to portable AAC
+            '-b:a', '70k',  # Narration-friendly bitrate
+            '-ar', str(sample_rate),
+            '-ac', '1',
+            *cover_output_args,  # Cover image output options, if provided
+            '-movflags', '+faststart',
+            '-f', 'ipod',  # Apple-friendly M4B/M4A muxer
+            f'{final_filename}'  # Output file
+        ])
+        if proc.returncode != 0:
+            raise RuntimeError(f'ffmpeg failed while creating {final_filename} (exit code {proc.returncode})')
+    finally:
+        Path(wav_list_txt).unlink(missing_ok=True)
+        if cover_file_path:
+            Path(cover_file_path).unlink(missing_ok=True)
 
-        '-map', '0:a',  # Map audio
-        '-c:a', 'aac',  # Convert to AAC
-        '-b:a', '64k',  # Reduce bitrate for smaller size
-
-        '-map_metadata', '1', # Map metadata
-
-        '-f', 'mp4',  # Output as M4B
-        f'{final_filename}'  # Output file
-    ])
-
-    Path(concat_file_path).unlink()
     if proc.returncode == 0:
         print(f'{final_filename} created. Enjoy your audiobook.')
+        print('Audio was encoded as AAC for smaller iPhone-friendly files.')
         print('Feel free to delete the intermediary .wav chapter files, the .m4b is all you need.')
 
 

@@ -40,8 +40,8 @@ def set_espeak_library():
     """Find the espeak library path"""
     try:
 
-        if os.environ.get('ESPEAK_LIBRARY'):
-            library = os.environ['ESPEAK_LIBRARY']
+        if os.environ.get('ESPEAK_LIBRARY') or os.environ.get('PHONEMIZER_ESPEAK_LIBRARY'):
+            library = os.environ.get('ESPEAK_LIBRARY') or os.environ.get('PHONEMIZER_ESPEAK_LIBRARY')
         elif platform.system() == 'Darwin':
             from subprocess import check_output
             try:
@@ -52,12 +52,17 @@ def set_espeak_library():
             except (subprocess.CalledProcessError, FileNotFoundError) as e:
                 raise RuntimeError("Cannot locate Homebrew Cellar. Is 'brew' installed and in PATH?") from e
         elif platform.system() == 'Linux':
-            library = glob('/usr/lib/*/libespeak-ng*')[0]
+            library = next(iter(glob('/usr/lib/*/libespeak-ng*')), None)
         elif platform.system() == 'Windows':
-            library = 'C:\\Program Files*\\eSpeak NG\\libespeak-ng.dll'
+            library = next(iter(glob(r'C:\Program Files*\eSpeak NG\libespeak-ng.dll')), None)
         else:
             print('Unsupported OS, please set the espeak library path manually')
             return
+        if not library:
+            raise RuntimeError(
+                'Could not find the espeak-ng library. '
+                'Please install espeak-ng or set the ESPEAK_LIBRARY environment variable.'
+            )
         print('Using espeak library:', library)
         from phonemizer.backend.espeak.wrapper import EspeakWrapper
         EspeakWrapper.set_library(library)

@@ -258,6 +258,12 @@ def find_document_chapters_and_extract_texts(book):
             continue
         xml = chapter.get_body_content()
         soup = BeautifulSoup(xml, features='lxml')
+        # Footnote markers are not prose: .text would fold the reference number
+        # into the sentence, and the TTS voice reads it out.
+        for sup in soup.find_all('sup'):
+            sup.decompose()
+        for noteref in soup.find_all('a', attrs={'epub:type': 'noteref'}):
+            noteref.decompose()
         chapter.extracted_text = ''
         html_content_tags = ['title', 'p', 'h1', 'h2', 'h3', 'h4', 'li']
         for text in [c.text.strip() for c in soup.find_all(html_content_tags) if c.text]:
